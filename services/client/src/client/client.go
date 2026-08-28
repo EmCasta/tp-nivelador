@@ -1,7 +1,10 @@
 package client
 
 import (
+	"bufio"
+	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -64,11 +67,29 @@ func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
-	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
-		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
+	// abrir archivo de entrada
+	inputFile, err := os.Open(client.config.InputFile)
+	if err != nil {
+		logger.Error("open-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return err
+	}
+	defer inputFile.Close()
+
+	// abrir archivo de salida
+	outputFile, err := os.Create(client.config.OutputFile)
+	if err != nil {
+		logger.Error("create-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return err
+	}
+	defer outputFile.Close()
+
+	// leer archivo linea a linea
+	scanner := bufio.NewScanner(inputFile)
+	for scanner.Scan() {
+		messageArgs := []any{"agency-id", client.config.AgencyId}
 		logger.Info(mainAction, logger.InProgress, messageArgs...)
 
-		clientMessage := client.config.AgencyId
+		clientMessage := scanner.Text()
 
 		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
 			logger.Error("send-message", logger.Fail, messageArgs...)
@@ -86,7 +107,17 @@ func (client *Client) Run() error {
 			return err
 		}
 
+		if _, err = fmt.Fprintln(outputFile, string(responseBuffer)); err != nil {
+			logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+			return err
+		}
+
 		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
+	}
+
+	if err = scanner.Err(); err != nil {
+		logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return err
 	}
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
 

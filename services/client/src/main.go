@@ -38,6 +38,8 @@ func loadConfig() (client.ClientConfig, error) {
 		ServerHost: serverHost,
 		ServerPort: serverPort,
 		AgencyId:   agencyId,
+		InputFile:  inputFile,
+		OutputFile: outputFile,
 	}, nil
 }
 
