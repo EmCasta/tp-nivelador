@@ -96,7 +96,7 @@ func (client *Client) Run() error {
 			return err
 		}
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+		responseBuffer, err := safe_socket.RecvAll(client.conn, len([]byte(clientMessage)))
 		if err != nil {
 			logger.Error("recv-response", logger.Fail, messageArgs...)
 			return err
