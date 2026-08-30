@@ -61,7 +61,7 @@ func (b Bet) ToCsv() string {
 
 func (b Bet) ToBytes(isLast bool) []byte {
 	// primero byte con isLast (para que sea mas comodo luego agregar cant. de apuestas en batch)
-	message := make([]byte, 0)
+	message := make([]byte, 0, MIN_LEN_PACKAGE)
 	var lastByte uint8 = 0
 	if isLast {
 		lastByte = 1
@@ -77,7 +77,7 @@ func (b Bet) ToBytes(isLast bool) []byte {
 	// luego number en 32 bits unsigned, big endian
 	message = binary.BigEndian.AppendUint32(message, b.Number)
 
-	// luego birthdate, ASCII de longitud 10
+	// luego birthdate, string de longitud 10
 	message = append(message, []byte(b.Birthdate)...)
 
 	firstName := []byte(b.FirstName)
@@ -100,14 +100,11 @@ func (b Bet) ToBytes(isLast bool) []byte {
 func FromBytes(bytes []byte) (Bet, bool, error) {
 	// parsear de bytes
 	if len(bytes) < MIN_LEN_PACKAGE {
-		return Bet{}, false, errors.New("Package too small")
+		return Bet{}, false, errors.New("Package too short")
 	}
 
 	// primer byte is Last (por ahora)
-	isLast := false
-	if bytes[0] == 1 {
-		isLast = true
-	}
+	isLast := bytes[0] == 1
 
 	// agency id uint32, big endian
 	agencyId := binary.BigEndian.Uint32(bytes[1:5])
@@ -118,8 +115,9 @@ func FromBytes(bytes []byte) (Bet, bool, error) {
 	// luego number uint32, BE
 	number := binary.BigEndian.Uint32(bytes[9:13])
 
-	// luego birthdate, ASCII len 10
+	// luego birthdate, string len 10
 	birthdate := string(bytes[13:23])
+	// TODO: validar len 10 con el formato esperado!!
 
 	// luego len de first name, uint8
 	firstNameLen := uint8(bytes[23])
@@ -127,14 +125,14 @@ func FromBytes(bytes []byte) (Bet, bool, error) {
 	// luego len de last name, uint8
 	lastNameLen := uint8(bytes[24])
 
-	// luego first name, ASCII de largo variable
+	// luego first name, string de largo variable
 	if len(bytes) < MIN_LEN_PACKAGE+int(firstNameLen) {
 		return Bet{}, false, errors.New("First Name too short")
 	}
 
 	firstName := string(bytes[MIN_LEN_PACKAGE : MIN_LEN_PACKAGE+int(firstNameLen)])
 
-	// luego lastName, ASCII de largo variable
+	// luego lastName, string de largo variable
 	if len(bytes) < MIN_LEN_PACKAGE+int(firstNameLen)+int(lastNameLen) {
 		return Bet{}, false, errors.New("Last Name too short")
 	}
