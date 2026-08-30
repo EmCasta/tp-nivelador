@@ -3,6 +3,11 @@ from src_frozen.lottery.bet import Bet
 # TODO: renombrar este archivo cuando ya tenga el modelo mas definido
 
 MIN_LEN_PACKET = 25
+BIRTHDATE_DELIMITER = "-"
+BIRTHDATE_LEN = 10
+BIRTHDATE_FIELDS = 3
+BIRTHDATE_YEAR_DIGITS = 4
+BIRTHDATE_DAY_MONTH_DIGITS = 2
 
 def bet_to_bytes(bet: Bet, is_last: bool) -> bytes:
     message = bytes()
@@ -59,7 +64,8 @@ def bytes_to_bet(bytes: bytes) -> tuple[Bet, bool]:
 
     # birthdate, string de len 10
     birthdate = bytes[13:23].decode(encoding="utf-8", errors="replace")
-    # TODO: validar formato de birthdate!!
+    if not validar_birthdate(birthdate):
+        raise ValueError("Invalid Birthdate format")
 
     # len de first name, byte unsigned
     first_name_len = int.from_bytes(bytes[23], "big", signed=False)
@@ -81,3 +87,15 @@ def bytes_to_bet(bytes: bytes) -> tuple[Bet, bool]:
 
     bet = Bet(agency_id, first_name, last_name, document, birthdate, number)
     return bet, is_last
+
+def validar_birthdate(birthdate: str) -> bool:
+    if len(birthdate) != BIRTHDATE_LEN:
+        return False
+    fields = birthdate.split(BIRTHDATE_DELIMITER)
+    if len(fields) != BIRTHDATE_FIELDS:
+        return False
+    if not all(f.is_digit() for f in fields):
+        return False
+    if len(fields[0]) != BIRTHDATE_YEAR_DIGITS or len(fields[1]) != BIRTHDATE_DAY_MONTH_DIGITS or len(fields[2]) != BIRTHDATE_DAY_MONTH_DIGITS:
+        return False
+    return True
