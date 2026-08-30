@@ -12,6 +12,11 @@ const EXPECTED_FIELD_NUMBER int = 5
 const BASE_10 int = 10
 const BIT_SIZE int = 32
 const MIN_LEN_PACKET int = 25
+const BIRTHDATE_DELIMITER string = "-"
+const BIRTHDATE_LEN int = 10
+const BIRTHDATE_FIELDS int = 3
+const BIRTHDATE_YEAR_DIGITS int = 4
+const BIRTHDATE_DAY_MONTH_DIGITS int = 2
 
 type Bet struct {
 	AgencyId  uint32
@@ -117,7 +122,9 @@ func FromBytes(bytes []byte) (Bet, bool, error) {
 
 	// luego birthdate, string len 10
 	birthdate := string(bytes[13:23])
-	// TODO: validar len 10 con el formato esperado!!
+	if !validateBirthdate(birthdate) {
+		return Bet{}, false, errors.New("Invalid Birthdate format")
+	}
 
 	// luego len de first name, uint8
 	firstNameLen := uint8(bytes[23])
@@ -149,4 +156,23 @@ func FromBytes(bytes []byte) (Bet, bool, error) {
 	}
 
 	return bet, isLast, nil
+}
+
+func validateBirthdate(birthdate string) bool {
+	if len(birthdate) != BIRTHDATE_LEN {
+		return false
+	}
+	fields := strings.Split(birthdate, BIRTHDATE_DELIMITER)
+	if len(fields) != BIRTHDATE_FIELDS {
+		return false
+	}
+	for _, f := range fields {
+		if _, err := strconv.ParseUint(f, BASE_10, BIT_SIZE); err != nil {
+			return false
+		}
+	}
+	if len(fields[0]) != BIRTHDATE_YEAR_DIGITS || len(fields[1]) != BIRTHDATE_DAY_MONTH_DIGITS || len(fields[2]) != BIRTHDATE_DAY_MONTH_DIGITS {
+		return false
+	}
+	return true
 }
