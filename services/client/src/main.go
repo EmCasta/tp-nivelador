@@ -7,6 +7,7 @@ import (
 
 	client "github.com/7574-sistemas-distribuidos/tp-nivelador/src/client"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 )
 
 func loadConfig() (client.ClientConfig, error) {
@@ -14,7 +15,7 @@ func loadConfig() (client.ClientConfig, error) {
 	if agencyId == "" {
 		return client.ClientConfig{}, errors.New("AGENCY_ID environment variable is required")
 	}
-	numericId, err := strconv.ParseUint(agencyId, client.BASE_10, client.BIT_SIZE)
+	numericId, err := strconv.ParseUint(agencyId, lottery.BASE_10, lottery.BIT_SIZE)
 	if err != nil {
 		return client.ClientConfig{}, errors.New("AGENCY_ID must be numeric")
 	}
