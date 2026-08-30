@@ -14,7 +14,7 @@ func loadConfig() (client.ClientConfig, error) {
 	if agencyId == "" {
 		return client.ClientConfig{}, errors.New("AGENCY_ID environment variable is required")
 	}
-	numericId, err := strconv.Atoi(agencyId)
+	numericId, err := strconv.ParseUint(agencyId, client.BASE_10, client.BIT_SIZE)
 	if err != nil {
 		return client.ClientConfig{}, errors.New("AGENCY_ID must be numeric")
 	}
@@ -42,7 +42,7 @@ func loadConfig() (client.ClientConfig, error) {
 	return client.ClientConfig{
 		ServerHost: serverHost,
 		ServerPort: serverPort,
-		AgencyId:   numericId,
+		AgencyId:   uint32(numericId),
 		InputFile:  inputFile,
 		OutputFile: outputFile,
 	}, nil
