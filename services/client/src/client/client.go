@@ -21,7 +21,7 @@ const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
 type ClientConfig struct {
 	ServerHost string
 	ServerPort string
-	AgencyId   string
+	AgencyId   int
 	InputFile  string
 	OutputFile string
 }
