@@ -11,7 +11,7 @@ const CSV_DELIMITER string = ","
 const EXPECTED_FIELD_NUMBER int = 5
 const BASE_10 int = 10
 const BIT_SIZE int = 32
-const MIN_LEN_PACKAGE int = 25
+const MIN_LEN_PACKET int = 25
 
 type Bet struct {
 	AgencyId  uint32
@@ -61,7 +61,7 @@ func (b Bet) ToCsv() string {
 
 func (b Bet) ToBytes(isLast bool) []byte {
 	// primero byte con isLast (para que sea mas comodo luego agregar cant. de apuestas en batch)
-	message := make([]byte, 0, MIN_LEN_PACKAGE)
+	message := make([]byte, 0, MIN_LEN_PACKET)
 	var lastByte uint8 = 0
 	if isLast {
 		lastByte = 1
@@ -99,7 +99,7 @@ func (b Bet) ToBytes(isLast bool) []byte {
 
 func FromBytes(bytes []byte) (Bet, bool, error) {
 	// parsear de bytes
-	if len(bytes) < MIN_LEN_PACKAGE {
+	if len(bytes) < MIN_LEN_PACKET {
 		return Bet{}, false, errors.New("Package too short")
 	}
 
@@ -126,18 +126,18 @@ func FromBytes(bytes []byte) (Bet, bool, error) {
 	lastNameLen := uint8(bytes[24])
 
 	// luego first name, string de largo variable
-	if len(bytes) < MIN_LEN_PACKAGE+int(firstNameLen) {
+	if len(bytes) < MIN_LEN_PACKET+int(firstNameLen) {
 		return Bet{}, false, errors.New("First Name too short")
 	}
 
-	firstName := string(bytes[MIN_LEN_PACKAGE : MIN_LEN_PACKAGE+int(firstNameLen)])
+	firstName := string(bytes[MIN_LEN_PACKET : MIN_LEN_PACKET+int(firstNameLen)])
 
 	// luego lastName, string de largo variable
-	if len(bytes) < MIN_LEN_PACKAGE+int(firstNameLen)+int(lastNameLen) {
+	if len(bytes) < MIN_LEN_PACKET+int(firstNameLen)+int(lastNameLen) {
 		return Bet{}, false, errors.New("Last Name too short")
 	}
 
-	lastName := string(bytes[MIN_LEN_PACKAGE+int(firstNameLen) : MIN_LEN_PACKAGE+int(firstNameLen)+int(lastNameLen)])
+	lastName := string(bytes[MIN_LEN_PACKET+int(firstNameLen) : MIN_LEN_PACKET+int(firstNameLen)+int(lastNameLen)])
 
 	bet := Bet{
 		AgencyId:  agencyId,

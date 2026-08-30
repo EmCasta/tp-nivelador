@@ -2,7 +2,7 @@ from src_frozen.lottery.bet import Bet
 
 # TODO: renombrar este archivo cuando ya tenga el modelo mas definido
 
-MIN_LEN_PACKAGE = 25
+MIN_LEN_PACKET = 25
 
 def bet_to_bytes(bet: Bet, is_last: bool) -> bytes:
     message = bytes()
@@ -42,7 +42,7 @@ def bet_to_bytes(bet: Bet, is_last: bool) -> bytes:
     return message
 
 def bytes_to_bet(bytes: bytes) -> tuple[Bet, bool]:
-    if len(bytes) < MIN_LEN_PACKAGE:
+    if len(bytes) < MIN_LEN_PACKET:
         raise ValueError("Package too short")
 
     # primer byte is last (por ahora)
@@ -68,16 +68,16 @@ def bytes_to_bet(bytes: bytes) -> tuple[Bet, bool]:
     last_name_len = int.from_bytes(bytes[24], "big", signed=False)
 
     # first name, string len variable
-    if len(bytes) < MIN_LEN_PACKAGE + first_name_len:
+    if len(bytes) < MIN_LEN_PACKET + first_name_len:
         raise ValueError("First Name too short")
 
-    first_name = bytes[MIN_LEN_PACKAGE:MIN_LEN_PACKAGE+first_name_len].decode(encoding="utf-8", errors="replace")
+    first_name = bytes[MIN_LEN_PACKET:MIN_LEN_PACKET+first_name_len].decode(encoding="utf-8", errors="replace")
 
     # last name, string len variable
-    if len(bytes) < MIN_LEN_PACKAGE + first_name_len + last_name_len:
+    if len(bytes) < MIN_LEN_PACKET + first_name_len + last_name_len:
         raise ValueError("Last Name too short")
 
-    last_name = bytes[MIN_LEN_PACKAGE+first_name_len:MIN_LEN_PACKAGE+first_name_len+last_name_len].decode(encoding="utf-8", errors="replace")
+    last_name = bytes[MIN_LEN_PACKET+first_name_len:MIN_LEN_PACKET+first_name_len+last_name_len].decode(encoding="utf-8", errors="replace")
 
     bet = Bet(agency_id, first_name, last_name, document, birthdate, number)
     return bet, is_last
