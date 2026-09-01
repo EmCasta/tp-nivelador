@@ -19,7 +19,8 @@ func (e *EndPacket) Header() []byte {
 }
 
 func (e *EndPacket) Serialize() []byte {
-	message := make([]byte, 0, 1)
+	message := make([]byte, 1, END_PACKET_LEN+1)
+	message[0] = uint8(END_PACKET_LEN)
 	message = append(message, e.Header()...)
 	return message
 }

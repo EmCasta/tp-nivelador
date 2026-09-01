@@ -23,7 +23,8 @@ func (h *HelloPacket) Header() []byte {
 }
 
 func (h *HelloPacket) Serialize() []byte {
-	message := make([]byte, 0, HELLO_PACKET_LEN)
+	message := make([]byte, 1, HELLO_PACKET_LEN+1)
+	message[0] = uint8(HELLO_PACKET_LEN)
 	message = append(message, h.Header()...)
 
 	message = binary.BigEndian.AppendUint32(message, h.agencyId)

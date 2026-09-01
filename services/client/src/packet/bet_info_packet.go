@@ -33,7 +33,7 @@ func (b *BetInfoPacket) Header() []byte {
 }
 
 func (b *BetInfoPacket) Serialize() []byte {
-	message := make([]byte, 0, MIN_LEN_PACKET)
+	message := make([]byte, 1, MIN_LEN_PACKET+1)
 
 	// primero header
 	message = append(message, b.Header()...)
@@ -61,6 +61,9 @@ func (b *BetInfoPacket) Serialize() []byte {
 
 	// luego last name per se
 	message = append(message, lastName...)
+
+	totalLen := len(message)
+	message[0] = uint8(totalLen)
 	return message
 }
 

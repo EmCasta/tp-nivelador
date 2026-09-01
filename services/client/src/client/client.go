@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/packet"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
 
@@ -83,43 +85,84 @@ func (client *Client) Run() error {
 	}
 	defer outputFile.Close()
 
+	// enviar mensaje de hello
+	messageArgs := []any{"agency-id", client.config.AgencyId}
+	helloPacket := packet.CreateHelloPacket(client.config.AgencyId)
+	if err := safe_socket.SendAll(client.conn, helloPacket.Serialize()); err != nil {
+		logger.Error("send-hello", logger.Fail, messageArgs...)
+		return err
+	}
+
 	// leer archivo linea a linea
 	scanner := bufio.NewScanner(inputFile)
 	for scanner.Scan() {
-		messageArgs := []any{"agency-id", client.config.AgencyId}
 		logger.Info(mainAction, logger.InProgress, messageArgs...)
 
-		clientMessage := scanner.Text()
+		csvBet := scanner.Text()
+		bet, err := lottery.FromCsv(csvBet, client.config.AgencyId)
+		if err != nil {
+			logger.Error("parse-csv-bet", logger.InProgress, "agency-id", client.config.AgencyId, "err", err)
+			continue // skippear linea e intentar con la siguiente (TODO: revisar!)
+		}
 
-		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
+		// enviar info de apuesta
+		packet := packet.CreateBetInfoPacket(bet)
+		if err := safe_socket.SendAll(client.conn, packet.Serialize()); err != nil {
 			logger.Error("send-message", logger.Fail, messageArgs...)
 			return err
 		}
+	}
+	if err = scanner.Err(); err != nil {
+		logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return err
+	}
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, len([]byte(clientMessage)))
+	// enviar mensaje de fin
+	endPacket := packet.CreateEndPacket()
+	if err := safe_socket.SendAll(client.conn, endPacket.Serialize()); err != nil {
+		logger.Error("send-end-bets", logger.Fail, messageArgs...)
+		return err
+	}
+
+	// TODO: mejorar esto!
+	for true {
+		// leer primer byte de longitud
+		messageLength, err := safe_socket.RecvAll(client.conn, 1)
+		if err != nil {
+			logger.Error("recv-length", logger.Fail, messageArgs...)
+			return err
+		}
+		length := uint8(messageLength[0])
+
+		// leer paquete per se
+		responsePacket, err := safe_socket.RecvAll(client.conn, int(length))
 		if err != nil {
 			logger.Error("recv-response", logger.Fail, messageArgs...)
 			return err
 		}
 
-		if string(responseBuffer) != clientMessage {
-			logger.Error("check-response", logger.Fail, messageArgs...)
-			return err
+		// actuar segun recepcion
+		switch responsePacket[0] {
+		case packet.TYPE_BET:
+			betInfo, err := packet.BetInfoFromBytes(responsePacket, client.config.AgencyId)
+			if err != nil {
+				logger.Error("deserialize-bet-info", logger.Fail, messageArgs...)
+				return err
+			}
+			if _, err = fmt.Fprintln(outputFile, betInfo.Bet.ToCsv()); err != nil {
+				logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+				return err
+			}
+		case packet.TYPE_END:
+			_, err := packet.EndFromBytes(responsePacket)
+			if err != nil {
+				logger.Error("deserialize-end", logger.Fail, messageArgs...)
+				return err
+			}
+			logger.Info("end-packet-received", logger.Success, messageArgs...)
+		default:
+			continue // paquete invalido, por ahora lo ignoro (TODO: revisar!)
 		}
-
-		if _, err = fmt.Fprintln(outputFile, string(responseBuffer)); err != nil {
-			logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-			return err
-		}
-
-		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
 	}
-
-	if err = scanner.Err(); err != nil {
-		logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-		return err
-	}
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
-
 	return nil
 }
