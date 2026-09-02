@@ -13,9 +13,9 @@ class HelloPacket(Packet):
 
     def serialize(self):
         message = bytearray([0])
-        message.append(self.header())
-        message.append(self.agency_id.to_bytes(5, "big", signed=False))
-        message.append(self.batch_size.to_bytes(1, "big", signed=False))
+        message.extend(self.header())
+        message.extend(self.agency_id.to_bytes(5, "big", signed=False))
+        message.extend(self.batch_size.to_bytes(1, "big", signed=False))
         length = len(message).to_bytes(1, "big", signed=False)
         message[0] = length
         return message
