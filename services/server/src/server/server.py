@@ -4,6 +4,7 @@ import safe_socket
 from protocol.hello_packet import hello_packet_from_bytes
 from protocol.bet_info_packet import bet_info_from_bytes, BetInfoPacket
 from protocol.packet import TYPE_BET, LENGTH_BYTES, get_last_packet_flag, set_last_packet_flag
+from server.client_info import ClientInfo
 from lottery import Lottery
 import traceback
 
@@ -16,75 +17,6 @@ class Server:
     def __init__(self, server_host: str, server_port: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
-
-    def _handle_client(self, client_socket):
-        action = "handle-client"
-        try:
-            logger.info(action, logger.LogResult.in_progress)
-            lottery = Lottery(STORAGE_PATH)
-            # recibir hello packet
-            message_length = safe_socket.recv_all(
-                client_socket, LENGTH_BYTES
-            )
-            length = int.from_bytes(message_length, "big", signed=False)
-            packet = safe_socket.recv_all(
-                client_socket, length
-            )
-            hello_packet = hello_packet_from_bytes(packet)
-            client_agency_id = hello_packet.agency_id
-            batch_size = hello_packet.batch_size
-            logger.info("hello-packet-received", logger.LogResult.in_progress, "agency-id", client_agency_id, "batch_size", batch_size)
-
-            keep_receiving = True
-            while keep_receiving:
-                # recibir tamaño primero
-                message_length = safe_socket.recv_all(
-                    client_socket, LENGTH_BYTES
-                )
-                length = int.from_bytes(message_length, "big", signed=False)
-                logger.info("msg-len-received", logger.LogResult.in_progress, "agency-id", client_agency_id, "len", length)
-
-                # recibir paquete
-                packet = safe_socket.recv_all(
-                    client_socket, length
-                )
-                packet = bytearray(packet)
-                logger.info("packet-received", logger.LogResult.in_progress, "agency-id", client_agency_id, "type", packet[0], "actual-len", len(packet))
-
-                is_last = get_last_packet_flag(packet)
-                keep_receiving = not is_last
-                if packet[0] == TYPE_BET:
-                    bet_info = bet_info_from_bytes(packet, client_agency_id, batch_size)
-                    logger.info("bet-packet-received", logger.LogResult.in_progress, "agency-id", client_agency_id)
-                    lottery.store_bets(bet_info.bets)
-                else:
-                    # TODO: revisar que hacer acá
-                    return
-
-            # enviar bets ganadoras
-            logger.info("sending-winners", logger.LogResult.in_progress, "agency-id", client_agency_id)
-            keep_sending = True
-            bet_iterator = lottery.load_bets()
-            while keep_sending:
-                bets = []
-                while len(bets) < batch_size:
-                    bet = next(bet_iterator, None)
-                    if bet is None:
-                        keep_sending = False
-                        break
-                    if lottery.has_won(bet) and bet.agency_id == client_agency_id:
-                        bets.append(bet)
-
-                packet = BetInfoPacket(bets).serialize()
-                if not keep_sending:
-                    set_last_packet_flag(packet)
-                safe_socket.send_all(client_socket, packet)
-
-        except Exception as e:
-            logger.error(
-                action, logger.LogResult.fail,
-                "err", e, "traceback", traceback.format_exc())
-            raise e
 
     def run(self):
         action = "accept-connection"
@@ -101,3 +33,76 @@ class Server:
                 logger.info(action, logger.LogResult.success)
 
                 self._handle_client(client_socket)
+    
+
+    def _handle_client(self, client_socket):
+        action = "handle-client"
+        try:
+            logger.info(action, logger.LogResult.in_progress)
+            lottery = Lottery(STORAGE_PATH)
+
+            hello_packet = self._wait_for_hello(client_socket)
+            client_info = ClientInfo(hello_packet.agency_id, hello_packet.batch_size)
+            logger.info("hello-packet-received", logger.LogResult.in_progress, "agency-id", client_info.agency_id, "batch_size", client_info.batch_size)
+
+            self._receive_bets(client_socket, lottery, client_info)
+            logger.info("bets-received", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
+
+            logger.info("sending-winners", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
+            self._send_winners(client_socket, lottery, client_info)
+
+        except Exception as e:
+            logger.error(
+                action, logger.LogResult.fail,
+                "err", e, "traceback", traceback.format_exc())
+            raise e
+
+    def _wait_for_hello(self, client_socket):
+        message_length = safe_socket.recv_all(
+            client_socket, LENGTH_BYTES
+        )
+        length = int.from_bytes(message_length, "big", signed=False)
+        packet = safe_socket.recv_all(
+            client_socket, length
+        )
+        hello_packet = hello_packet_from_bytes(packet)
+        return hello_packet
+
+    def _receive_bets(self, client_socket, lottery, client_info):
+        keep_receiving = True
+        while keep_receiving:
+            message_length = safe_socket.recv_all(
+                client_socket, LENGTH_BYTES
+            )
+            length = int.from_bytes(message_length, "big", signed=False)
+            packet = safe_socket.recv_all(
+                client_socket, length
+            )
+            packet = bytearray(packet)
+
+            is_last = get_last_packet_flag(packet, 0)
+            keep_receiving = not is_last
+            if packet[0] == TYPE_BET:
+                bet_info = bet_info_from_bytes(packet, client_info.agency_id, client_info.batch_size)
+                lottery.store_bets(bet_info.bets)
+            else:
+                raise ValueError("Invalid packet type")
+
+    def _send_winners(self, client_socket, lottery, client_info):
+        keep_sending = True
+        bet_iterator = lottery.load_bets()
+        while keep_sending:
+            bets = []
+            while len(bets) < client_info.batch_size:
+                bet = next(bet_iterator, None)
+                if bet is None:
+                    keep_sending = False
+                    break
+                if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
+                    bets.append(bet)
+            if len(bets) == 0:
+                return
+            packet = BetInfoPacket(bets).serialize()
+            if not keep_sending:
+                set_last_packet_flag(packet, LENGTH_BYTES)
+            safe_socket.send_all(client_socket, packet)
