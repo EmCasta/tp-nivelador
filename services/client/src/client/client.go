@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -137,7 +138,7 @@ func (client *Client) Run() error {
 			return err
 		}
 		logger.Info("msg-len-received", logger.InProgress, "agency-id", client.config.AgencyId, "recv-len", len(messageLength))
-		length := uint8(messageLength[0])
+		length := binary.BigEndian.Uint16(messageLength)
 		logger.Info("msg-len-received", logger.InProgress, "agency-id", client.config.AgencyId, "actual-len", length)
 
 		// leer paquete per se

@@ -18,15 +18,16 @@ class BetInfoPacket(Packet):
         return TYPE_BET
 
     def serialize(self):
-        message = bytearray([0])
-
+        message = bytearray()
         message.extend(self.header())
     
         for bet in self.bets:
             message.extend(self._serialize_bet(bet))
 
-        message[0] = len(message) - LENGTH_BYTES
-        return message
+        length = len(message)
+        final_message = bytearray(length.to_bytes(2, "big", signed=False))
+        final_message.extend(message)
+        return final_message
 
 
     def _serialize_bet(self, bet):

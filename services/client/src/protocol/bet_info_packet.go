@@ -43,9 +43,8 @@ func (b *BetInfoPacket) Serialize() []byte {
 	for _, bet := range b.Bets {
 		message = append(message, b.serializeBet(bet)...)
 	}
-
 	totalLen := len(message)
-	message[0] = uint8(totalLen - LENGTH_BYTES)
+	binary.BigEndian.PutUint16(message, uint16(totalLen-LENGTH_BYTES))
 	return message
 }
 

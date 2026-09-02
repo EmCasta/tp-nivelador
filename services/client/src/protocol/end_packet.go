@@ -1,6 +1,9 @@
 package protocol
 
-import "errors"
+import (
+	"encoding/binary"
+	"errors"
+)
 
 const END_PACKET_LEN int = 1
 
@@ -20,7 +23,7 @@ func (e *EndPacket) Header() []byte {
 
 func (e *EndPacket) Serialize() []byte {
 	message := make([]byte, LENGTH_BYTES, END_PACKET_LEN+LENGTH_BYTES)
-	message[0] = uint8(END_PACKET_LEN)
+	message = binary.BigEndian.AppendUint16(message, uint16(END_PACKET_LEN))
 	message = append(message, e.Header()...)
 	return message
 }

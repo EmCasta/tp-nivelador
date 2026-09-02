@@ -7,7 +7,7 @@ const (
 	FIRST_BIT       byte  = 0b10000000
 	LAST_SEVEN_BITS byte  = 0b01111111
 	BIT_OFFSET      byte  = 7
-	LENGTH_BYTES    int   = 1
+	LENGTH_BYTES    int   = 2
 )
 
 type Packet interface {
