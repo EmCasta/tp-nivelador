@@ -5,17 +5,25 @@ import (
 	"os"
 	"strconv"
 
-	client "github.com/7574-sistemas-distribuidos/tp-nivelador/src/client"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/client"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 )
+
+func parseNumber(str string) (uint64, error) {
+	number, err := strconv.ParseUint(str, lottery.BASE_10, lottery.BIT_SIZE)
+	if err != nil {
+		return 0, errors.New("AGENCY_ID must be numeric")
+	}
+	return number, nil
+}
 
 func loadConfig() (client.ClientConfig, error) {
 	agencyId := os.Getenv("AGENCY_ID")
 	if agencyId == "" {
 		return client.ClientConfig{}, errors.New("AGENCY_ID environment variable is required")
 	}
-	numericId, err := strconv.ParseUint(agencyId, lottery.BASE_10, lottery.BIT_SIZE)
+	numericId, err := parseNumber(agencyId)
 	if err != nil {
 		return client.ClientConfig{}, errors.New("AGENCY_ID must be numeric")
 	}
@@ -24,9 +32,12 @@ func loadConfig() (client.ClientConfig, error) {
 	if batchSize == "" {
 		return client.ClientConfig{}, errors.New("BATCH_SIZE environment variable is required")
 	}
-	numericBatchSize, err := strconv.ParseUint(batchSize, lottery.BASE_10, lottery.BIT_SIZE)
+	numericBatchSize, err := parseNumber(batchSize)
 	if err != nil {
 		return client.ClientConfig{}, errors.New("BATCH_SIZE must be numeric")
+	}
+	if numericBatchSize == 0 {
+		return client.ClientConfig{}, errors.New("BATCH_SIZE cannot be 0")
 	}
 
 	serverHost := os.Getenv("SERVER_HOST")

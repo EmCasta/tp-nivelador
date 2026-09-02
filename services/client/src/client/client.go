@@ -43,6 +43,38 @@ func NewClient(config ClientConfig) (*Client, error) {
 	return client, nil
 }
 
+func (client *Client) Run() error {
+	messageArgs := []any{"agency-id", client.config.AgencyId}
+	defer client.conn.Close()
+
+	inputFile, outputFile, err := client.openFiles()
+	if err != nil {
+		logger.Error("create-output-file", logger.Fail, messageArgs...)
+		return err
+	}
+	defer inputFile.Close()
+	defer outputFile.Close()
+
+	// enviar mensaje de hello
+	if err := client.sendHello(); err != nil {
+		logger.Error("send-hello", logger.Fail, messageArgs...)
+		return err
+	}
+
+	// enviar apuestas
+	if err = client.sendBets(inputFile); err != nil {
+		logger.Error("send-bets", logger.Fail, messageArgs...)
+		return err
+	}
+
+	// recibir ganadores
+	if err = client.receiveWinners(outputFile); err != nil {
+		logger.Error("receive-winners", logger.Fail, messageArgs...)
+		return err
+	}
+	return nil
+}
+
 func connectToServer(host, port string) (net.Conn, error) {
 	const action = "connect-to-server"
 	var err error
@@ -64,39 +96,35 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
-func (client *Client) Run() error {
-	const mainAction = "test-echo-server"
-	defer client.conn.Close()
-
+func (client *Client) openFiles() (*os.File, *os.File, error) {
 	// abrir archivo de entrada
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil {
-		logger.Error("open-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-		return err
+		return nil, nil, err
 	}
-	defer inputFile.Close()
 
 	// abrir archivo de salida
 	outputFile, err := os.Create(client.config.OutputFile)
 	if err != nil {
-		logger.Error("create-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-		return err
+		return nil, nil, err
 	}
-	defer outputFile.Close()
+	return inputFile, outputFile, nil
+}
 
-	// enviar mensaje de hello
-	messageArgs := []any{"agency-id", client.config.AgencyId}
+func (client *Client) sendHello() error {
 	helloPacket := protocol.CreateHelloPacket(client.config.AgencyId, client.config.BatchSize)
 	if err := safe_socket.SendAll(client.conn, helloPacket.Serialize()); err != nil {
-		logger.Error("send-hello", logger.Fail, messageArgs...)
 		return err
 	}
+	return nil
+}
 
+func (client *Client) sendBets(inputFile *os.File) error {
 	scanner := bufio.NewScanner(inputFile)
+	batchSize := int(client.config.BatchSize)
 	keepScanning := true
 	for keepScanning {
 		// recorrer batch
-		batchSize := int(client.config.BatchSize)
 		bets := make([]lottery.Bet, 0, batchSize)
 		for len(bets) < batchSize {
 			keepScanning = scanner.Scan()
@@ -106,75 +134,55 @@ func (client *Client) Run() error {
 			csvBet := scanner.Text()
 			bet, err := lottery.FromCsv(csvBet, client.config.AgencyId)
 			if err != nil {
-				logger.Error("parse-csv-bet", logger.InProgress, "agency-id", client.config.AgencyId, "err", err)
 				return err
 			}
 			bets = append(bets, bet)
 		}
-		if err = scanner.Err(); err != nil {
-			logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		if err := scanner.Err(); err != nil {
 			return err
 		}
-
-		// enviar info de apuesta
-		packet := protocol.CreateBetInfoPacket(bets, batchSize)
+		if len(bets) == 0 {
+			break
+		}
+		packet := protocol.CreateBetInfoPacket(bets)
 		serializedPacket := packet.Serialize()
 		if !keepScanning {
-			protocol.SetLastPacketFlag(serializedPacket)
+			protocol.SetLastPacketFlag(serializedPacket, protocol.LENGTH_BYTES)
 		}
 		if err := safe_socket.SendAll(client.conn, serializedPacket); err != nil {
-			logger.Error("send-message", logger.Fail, messageArgs...)
 			return err
 		}
-		logger.Info("packet-sent", logger.InProgress, "agency-id", client.config.AgencyId, "len", len(packet.Serialize()))
 	}
+	return nil
+}
 
+func (client *Client) receiveWinners(outputFile *os.File) error {
 	keepReceiving := true
 	for keepReceiving {
-		// leer primer byte de longitud
 		messageLength, err := safe_socket.RecvAll(client.conn, protocol.LENGTH_BYTES)
 		if err != nil {
-			logger.Error("recv-length", logger.Fail, messageArgs...)
 			return err
 		}
-		logger.Info("msg-len-received", logger.InProgress, "agency-id", client.config.AgencyId, "recv-len", len(messageLength))
 		length := binary.BigEndian.Uint16(messageLength)
-		logger.Info("msg-len-received", logger.InProgress, "agency-id", client.config.AgencyId, "actual-len", length)
-
-		// leer paquete per se
 		responsePacket, err := safe_socket.RecvAll(client.conn, int(length))
 		if err != nil {
-			logger.Error("recv-response", logger.Fail, messageArgs...)
 			return err
 		}
 
-		isLast := protocol.GetLastPacketFlag(responsePacket)
+		isLast := protocol.GetLastPacketFlag(responsePacket, 0)
 		keepReceiving = !isLast
-		// actuar segun recepcion
 		switch responsePacket[0] {
 		case protocol.TYPE_BET:
 			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId, int(client.config.BatchSize))
 			if err != nil {
-				logger.Error("deserialize-bet-info", logger.Fail, messageArgs...)
 				return err
 			}
 			for _, bet := range betInfo.Bets {
 				if _, err = fmt.Fprintln(outputFile, bet.ToCsv()); err != nil {
-					logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 					return err
 				}
 			}
-		// SACAR ESTO (o refactor)!!
-		case protocol.TYPE_END:
-			_, err := protocol.EndFromBytes(responsePacket)
-			if err != nil {
-				logger.Error("deserialize-end", logger.Fail, messageArgs...)
-				return err
-			}
-			logger.Info("end-packet-received", logger.Success, messageArgs...)
-			return nil
 		default:
-			logger.Error("deserialize-packet", logger.Fail, messageArgs...)
 			return errors.New("Unknown packet type")
 		}
 	}

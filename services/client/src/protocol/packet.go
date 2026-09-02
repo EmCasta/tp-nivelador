@@ -16,17 +16,17 @@ type Packet interface {
 	Header() []byte
 }
 
-func SetLastPacketFlag(packet []byte) {
-	firstByte := packet[LENGTH_BYTES]
+func SetLastPacketFlag(packet []byte, offset int) {
+	firstByte := packet[offset]
 	firstByte = firstByte | FIRST_BIT
-	packet[LENGTH_BYTES] = firstByte
+	packet[offset] = firstByte
 }
 
-func GetLastPacketFlag(packet []byte) bool {
-	firstByte := packet[0]
+func GetLastPacketFlag(packet []byte, offset int) bool {
+	firstByte := packet[offset]
 	flag := (firstByte & FIRST_BIT) >> BIT_OFFSET
 	isLast := flag == 1
 	firstByte = firstByte & LAST_SEVEN_BITS
-	packet[0] = firstByte
+	packet[offset] = firstByte
 	return isLast
 }
