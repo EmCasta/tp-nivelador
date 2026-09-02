@@ -84,7 +84,7 @@ func (client *Client) Run() error {
 
 	// enviar mensaje de hello
 	messageArgs := []any{"agency-id", client.config.AgencyId}
-	helloPacket := protocol.CreateHelloPacket(client.config.AgencyId)
+	helloPacket := protocol.CreateHelloPacket(client.config.AgencyId, client.config.BatchSize)
 	if err := safe_socket.SendAll(client.conn, helloPacket.Serialize()); err != nil {
 		logger.Error("send-hello", logger.Fail, messageArgs...)
 		return err

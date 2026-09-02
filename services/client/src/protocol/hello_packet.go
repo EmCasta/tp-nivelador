@@ -4,14 +4,15 @@ import (
 	"encoding/binary"
 )
 
-const HELLO_PACKET_LEN int = 5
+const HELLO_PACKET_LEN int = 6
 
 type HelloPacket struct {
-	agencyId uint32
+	agencyId  uint32
+	batchSize uint8
 }
 
-func CreateHelloPacket(agencyId uint32) Packet {
-	return &HelloPacket{agencyId}
+func CreateHelloPacket(agencyId uint32, batchSize uint8) Packet {
+	return &HelloPacket{agencyId, batchSize}
 }
 
 func (h *HelloPacket) GetType() uint8 {
@@ -28,5 +29,6 @@ func (h *HelloPacket) Serialize() []byte {
 	message = append(message, h.Header()...)
 
 	message = binary.BigEndian.AppendUint32(message, h.agencyId)
+	message = append(message, h.batchSize)
 	return message
 }
