@@ -1,4 +1,4 @@
-package packet
+package protocol
 
 const (
 	TYPE_HELLO uint8 = 0x00

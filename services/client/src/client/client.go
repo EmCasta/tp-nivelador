@@ -9,7 +9,7 @@ import (
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/packet"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
 
@@ -83,7 +83,7 @@ func (client *Client) Run() error {
 
 	// enviar mensaje de hello
 	messageArgs := []any{"agency-id", client.config.AgencyId}
-	helloPacket := packet.CreateHelloPacket(client.config.AgencyId)
+	helloPacket := protocol.CreateHelloPacket(client.config.AgencyId)
 	if err := safe_socket.SendAll(client.conn, helloPacket.Serialize()); err != nil {
 		logger.Error("send-hello", logger.Fail, messageArgs...)
 		return err
@@ -102,7 +102,7 @@ func (client *Client) Run() error {
 		}
 
 		// enviar info de apuesta
-		packet := packet.CreateBetInfoPacket(bet)
+		packet := protocol.CreateBetInfoPacket(bet)
 		if err := safe_socket.SendAll(client.conn, packet.Serialize()); err != nil {
 			logger.Error("send-message", logger.Fail, messageArgs...)
 			return err
@@ -115,7 +115,7 @@ func (client *Client) Run() error {
 	}
 
 	// enviar mensaje de fin
-	endPacket := packet.CreateEndPacket()
+	endPacket := protocol.CreateEndPacket()
 	if err := safe_socket.SendAll(client.conn, endPacket.Serialize()); err != nil {
 		logger.Error("send-end-bets", logger.Fail, messageArgs...)
 		return err
@@ -143,8 +143,8 @@ func (client *Client) Run() error {
 
 		// actuar segun recepcion
 		switch responsePacket[0] {
-		case packet.TYPE_BET:
-			betInfo, err := packet.BetInfoFromBytes(responsePacket, client.config.AgencyId)
+		case protocol.TYPE_BET:
+			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId)
 			if err != nil {
 				logger.Error("deserialize-bet-info", logger.Fail, messageArgs...)
 				return err
@@ -153,8 +153,8 @@ func (client *Client) Run() error {
 				logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 				return err
 			}
-		case packet.TYPE_END:
-			_, err := packet.EndFromBytes(responsePacket)
+		case protocol.TYPE_END:
+			_, err := protocol.EndFromBytes(responsePacket)
 			if err != nil {
 				logger.Error("deserialize-end", logger.Fail, messageArgs...)
 				return err

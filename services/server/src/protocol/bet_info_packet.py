@@ -1,5 +1,5 @@
 from lottery.bet import Bet
-from packet.packet import Packet, TYPE_BET
+from protocol.packet import Packet, TYPE_BET
 
 MIN_LEN_PACKET = 21
 BIRTHDATE_DELIMITER = "-"

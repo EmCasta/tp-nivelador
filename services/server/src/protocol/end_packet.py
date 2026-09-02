@@ -1,4 +1,4 @@
-from packet.packet import Packet, TYPE_END
+from protocol.packet import Packet, TYPE_END
 
 END_PACKET_LEN = 1
 

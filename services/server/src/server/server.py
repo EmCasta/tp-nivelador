@@ -1,10 +1,10 @@
 import socket
 import logger
 import safe_socket
-from packet.hello_packet import hello_packet_from_bytes
-from packet.bet_info_packet import bet_info_from_bytes, BetInfoPacket
-from packet.end_packet import end_from_bytes, EndPacket
-from packet.packet import TYPE_BET, TYPE_END
+from protocol.hello_packet import hello_packet_from_bytes
+from protocol.bet_info_packet import bet_info_from_bytes, BetInfoPacket
+from protocol.end_packet import end_from_bytes, EndPacket
+from protocol.packet import TYPE_BET, TYPE_END
 from lottery import Lottery
 import traceback
 

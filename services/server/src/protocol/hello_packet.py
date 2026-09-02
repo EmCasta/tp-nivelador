@@ -1,4 +1,4 @@
-from packet.packet import Packet, TYPE_HELLO
+from protocol.packet import Packet, TYPE_HELLO
 
 HELLO_PACKET_LEN = 5
 
