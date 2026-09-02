@@ -16,10 +16,6 @@ import (
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
 
-const ECHO_CLIENT_BUFFER_SIZE = 512
-const ECHO_CLIENT_MESSAGE_AMOUNT = 3
-const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
-
 type ClientConfig struct {
 	ServerHost string
 	ServerPort string
@@ -111,6 +107,7 @@ func (client *Client) Run() error {
 			logger.Error("send-message", logger.Fail, messageArgs...)
 			return err
 		}
+		logger.Info("packet-sent", logger.InProgress, "agency-id", client.config.AgencyId, "len", len(packet.Serialize()))
 	}
 	if err = scanner.Err(); err != nil {
 		logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
@@ -123,6 +120,7 @@ func (client *Client) Run() error {
 		logger.Error("send-end-bets", logger.Fail, messageArgs...)
 		return err
 	}
+	logger.Info("end-packet-sent", logger.InProgress, "agency-id", client.config.AgencyId)
 
 	// TODO: mejorar esto!
 	for true {
@@ -132,7 +130,9 @@ func (client *Client) Run() error {
 			logger.Error("recv-length", logger.Fail, messageArgs...)
 			return err
 		}
+		logger.Info("msg-len-received", logger.InProgress, "agency-id", client.config.AgencyId, "recv-len", len(messageLength))
 		length := uint8(messageLength[0])
+		logger.Info("msg-len-received", logger.InProgress, "agency-id", client.config.AgencyId, "actual-len", length)
 
 		// leer paquete per se
 		responsePacket, err := safe_socket.RecvAll(client.conn, int(length))
@@ -160,6 +160,7 @@ func (client *Client) Run() error {
 				return err
 			}
 			logger.Info("end-packet-received", logger.Success, messageArgs...)
+			return nil
 		default:
 			continue // paquete invalido, por ahora lo ignoro (TODO: revisar!)
 		}

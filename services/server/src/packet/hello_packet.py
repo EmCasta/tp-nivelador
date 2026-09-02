@@ -14,7 +14,8 @@ class HelloPacket(Packet):
         message = bytes()
         message += self.header()
         message += self.agency_id.to_bytes(5, "big", signed=False)
-        return message
+        length = len(message).to_bytes(1, "big", signed=False)
+        return length + message
 
 def hello_packet_from_bytes(bytes: bytes) -> HelloPacket:
     if len(bytes) != HELLO_PACKET_LEN:

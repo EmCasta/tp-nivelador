@@ -12,7 +12,8 @@ class EndPacket(Packet):
     def serialize(self):
         message = bytes()
         message += self.header()
-        return message
+        length = len(message).to_bytes(1, "big", signed=False)
+        return length + message
 
 def end_from_bytes(bytes: bytes) -> EndPacket:
     if len(bytes) != END_PACKET_LEN:

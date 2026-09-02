@@ -63,7 +63,7 @@ func (b *BetInfoPacket) Serialize() []byte {
 	message = append(message, lastName...)
 
 	totalLen := len(message)
-	message[0] = uint8(totalLen)
+	message[0] = uint8(totalLen - 1)
 	return message
 }
 

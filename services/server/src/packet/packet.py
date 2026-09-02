@@ -1,4 +1,4 @@
-from abc import ABC, abstract_method
+from abc import ABC, abstractmethod
 
 TYPE_HELLO = 0x00
 TYPE_BET = 0x01
@@ -6,11 +6,11 @@ TYPE_END = 0x02
 
 class Packet(ABC):
 
-    @abstract_method
+    @abstractmethod
     def get_type(self) -> int:
         pass
 
-    @abstract_method
+    @abstractmethod
     def serialize(self) -> bytes:
         pass
 

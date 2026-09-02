@@ -1,4 +1,4 @@
-from src_frozen.lottery.bet import Bet
+from lottery.bet import Bet
 from packet.packet import Packet, TYPE_BET
 
 MIN_LEN_PACKET = 21
@@ -46,11 +46,13 @@ class BetInfoPacket(Packet):
     
         # last name per se
         message += last_name_bytes
-        return message
+
+        length = len(message).to_bytes(1, "big", signed=False)
+        return length + message
 
 def bet_info_from_bytes(bytes: bytes, agency_id: int) -> BetInfoPacket:
     if len(bytes) < MIN_LEN_PACKET:
-        raise ValueError("Packet too short")
+        raise ValueError("Packet too short", len(bytes))
     if bytes[0] != TYPE_BET:
         raise ValueError("Invalid packet type")
 
@@ -66,10 +68,10 @@ def bet_info_from_bytes(bytes: bytes, agency_id: int) -> BetInfoPacket:
         raise ValueError("Invalid Birthdate format")
 
     # len de first name, byte unsigned
-    first_name_len = int.from_bytes(bytes[19], "big", signed=False)
+    first_name_len = int.from_bytes(bytes[19:20], "big", signed=False)
 
     # len de last name, byte unsigned
-    last_name_len = int.from_bytes(bytes[20], "big", signed=False)
+    last_name_len = int.from_bytes(bytes[20:21], "big", signed=False)
 
     # first name, string len variable
     if len(bytes) < MIN_LEN_PACKET + first_name_len:
@@ -92,7 +94,7 @@ def validate_birthdate(birthdate: str) -> bool:
     fields = birthdate.split(BIRTHDATE_DELIMITER)
     if len(fields) != BIRTHDATE_FIELDS:
         return False
-    if not all(f.is_digit() for f in fields):
+    if not all(f.isdigit() for f in fields):
         return False
     if len(fields[0]) != BIRTHDATE_YEAR_DIGITS or len(fields[1]) != BIRTHDATE_DAY_MONTH_DIGITS or len(fields[2]) != BIRTHDATE_DAY_MONTH_DIGITS:
         return False
