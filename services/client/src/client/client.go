@@ -20,6 +20,7 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	AgencyId   uint32
+	BatchSize  uint8
 	InputFile  string
 	OutputFile string
 }

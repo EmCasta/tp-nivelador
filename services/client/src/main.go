@@ -20,6 +20,15 @@ func loadConfig() (client.ClientConfig, error) {
 		return client.ClientConfig{}, errors.New("AGENCY_ID must be numeric")
 	}
 
+	batchSize := os.Getenv("BATCH_SIZE")
+	if batchSize == "" {
+		return client.ClientConfig{}, errors.New("BATCH_SIZE environment variable is required")
+	}
+	numericBatchSize, err := strconv.ParseUint(batchSize, lottery.BASE_10, lottery.BIT_SIZE)
+	if err != nil {
+		return client.ClientConfig{}, errors.New("BATCH_SIZE must be numeric")
+	}
+
 	serverHost := os.Getenv("SERVER_HOST")
 	if serverHost == "" {
 		return client.ClientConfig{}, errors.New("SERVER_HOST environment variable is required")
@@ -44,6 +53,7 @@ func loadConfig() (client.ClientConfig, error) {
 		ServerHost: serverHost,
 		ServerPort: serverPort,
 		AgencyId:   uint32(numericId),
+		BatchSize:  uint8(numericBatchSize),
 		InputFile:  inputFile,
 		OutputFile: outputFile,
 	}, nil
