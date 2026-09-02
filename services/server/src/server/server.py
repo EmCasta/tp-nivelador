@@ -20,6 +20,8 @@ class Server:
         self.server_port = server_port
         self.agency_quorum_min = agency_quorum_min
         self.file_lock = threading.Lock()
+        self.quorum_condition = threading.Condition()
+        self.client_count = 0
 
     def run(self):
         action = "accept-connection"
@@ -90,10 +92,17 @@ class Server:
                 bet_info = bet_info_from_bytes(packet, client_info.agency_id, client_info.batch_size)
                 with self.file_lock:
                     lottery.store_bets(bet_info.bets)
+                with self.quorum_condition:
+                    self.client_count += 1
+                    self.quorum_condition.notify_all()
             else:
                 raise ValueError("Invalid packet type")
 
     def _send_winners(self, client_socket, lottery, client_info):
+        with self.quorum_condition:
+            while self.client_count < self.agency_quorum_min:
+                self.quorum_condition.wait()
+
         with self.file_lock:
             keep_sending = True
             bet_iterator = lottery.load_bets()
