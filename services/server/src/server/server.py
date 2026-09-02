@@ -14,9 +14,10 @@ STORAGE_PATH = "storage.tmp"
 # TODO: ver tema storage
 
 class Server:
-    def __init__(self, server_host: str, server_port: int) -> None:
+    def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.agency_quorum_min = agency_quorum_min
 
     def run(self):
         action = "accept-connection"
