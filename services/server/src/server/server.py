@@ -1,4 +1,5 @@
 import socket
+import threading
 import logger
 import safe_socket
 from protocol.hello_packet import hello_packet_from_bytes
@@ -18,6 +19,7 @@ class Server:
         self.server_host = server_host
         self.server_port = server_port
         self.agency_quorum_min = agency_quorum_min
+        self.file_lock = threading.Lock()
 
     def run(self):
         action = "accept-connection"
@@ -33,7 +35,8 @@ class Server:
                     raise e
                 logger.info(action, logger.LogResult.success)
 
-                self._handle_client(client_socket)
+                client_thread = threading.Thread(target=self._handle_client, args=(client_socket,))
+                client_thread.start()
     
 
     def _handle_client(self, client_socket):
@@ -85,25 +88,27 @@ class Server:
             keep_receiving = not is_last
             if packet[0] == TYPE_BET:
                 bet_info = bet_info_from_bytes(packet, client_info.agency_id, client_info.batch_size)
-                lottery.store_bets(bet_info.bets)
+                with self.file_lock:
+                    lottery.store_bets(bet_info.bets)
             else:
                 raise ValueError("Invalid packet type")
 
     def _send_winners(self, client_socket, lottery, client_info):
-        keep_sending = True
-        bet_iterator = lottery.load_bets()
-        while keep_sending:
-            bets = []
-            while len(bets) < client_info.batch_size:
-                bet = next(bet_iterator, None)
-                if bet is None:
-                    keep_sending = False
-                    break
-                if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
-                    bets.append(bet)
-            if len(bets) == 0:
-                return
-            packet = BetInfoPacket(bets).serialize()
-            if not keep_sending:
-                set_last_packet_flag(packet, LENGTH_BYTES)
-            safe_socket.send_all(client_socket, packet)
+        with self.file_lock:
+            keep_sending = True
+            bet_iterator = lottery.load_bets()
+            while keep_sending:
+                bets = []
+                while len(bets) < client_info.batch_size:
+                    bet = next(bet_iterator, None)
+                    if bet is None:
+                        keep_sending = False
+                        break
+                    if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
+                        bets.append(bet)
+                if len(bets) == 0:
+                    return
+                packet = BetInfoPacket(bets).serialize()
+                if not keep_sending:
+                    set_last_packet_flag(packet, LENGTH_BYTES)
+                safe_socket.send_all(client_socket, packet)
