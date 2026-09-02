@@ -24,7 +24,7 @@ func (h *HelloPacket) Header() []byte {
 }
 
 func (h *HelloPacket) Serialize() []byte {
-	message := make([]byte, 1, HELLO_PACKET_LEN+1)
+	message := make([]byte, LENGTH_BYTES, HELLO_PACKET_LEN+LENGTH_BYTES)
 	message[0] = uint8(HELLO_PACKET_LEN)
 	message = append(message, h.Header()...)
 

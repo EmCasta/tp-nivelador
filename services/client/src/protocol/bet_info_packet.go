@@ -9,7 +9,10 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 )
 
-const MIN_LEN_PACKET int = 21
+// TODO: mejorar limites de tamaño en bets!
+
+const MIN_LEN_PACKET int = 20
+const HEADER_LEN int = 1
 const BIRTHDATE_DELIMITER string = "-"
 const BIRTHDATE_LEN int = 10
 const BIRTHDATE_FIELDS int = 3
@@ -17,11 +20,12 @@ const BIRTHDATE_YEAR_DIGITS int = 4
 const BIRTHDATE_DAY_MONTH_DIGITS int = 2
 
 type BetInfoPacket struct {
-	Bet lottery.Bet
+	Bets      []lottery.Bet
+	batchSize int
 }
 
-func CreateBetInfoPacket(bet lottery.Bet) Packet {
-	return &BetInfoPacket{bet}
+func CreateBetInfoPacket(bets []lottery.Bet, batchSize int) Packet {
+	return &BetInfoPacket{bets, batchSize}
 }
 
 func (b *BetInfoPacket) GetType() uint8 {
@@ -33,22 +37,32 @@ func (b *BetInfoPacket) Header() []byte {
 }
 
 func (b *BetInfoPacket) Serialize() []byte {
-	message := make([]byte, 1, MIN_LEN_PACKET+1)
-
-	// primero header
+	message := make([]byte, LENGTH_BYTES, b.batchSize*MIN_LEN_PACKET+HEADER_LEN+LENGTH_BYTES)
 	message = append(message, b.Header()...)
 
-	// luego document en 32 bits unsigned, big endian
-	message = binary.BigEndian.AppendUint32(message, b.Bet.Document)
+	for _, bet := range b.Bets {
+		message = append(message, b.serializeBet(bet)...)
+	}
+
+	totalLen := len(message)
+	message[0] = uint8(totalLen - LENGTH_BYTES)
+	return message
+}
+
+func (b *BetInfoPacket) serializeBet(bet lottery.Bet) []byte {
+	message := make([]byte, 0, MIN_LEN_PACKET)
+
+	// document en 32 bits unsigned, big endian
+	message = binary.BigEndian.AppendUint32(message, bet.Document)
 
 	// luego number en 32 bits unsigned, big endian
-	message = binary.BigEndian.AppendUint32(message, b.Bet.Number)
+	message = binary.BigEndian.AppendUint32(message, bet.Number)
 
 	// luego birthdate, string de longitud 10
-	message = append(message, []byte(b.Bet.Birthdate)...)
+	message = append(message, []byte(bet.Birthdate)...)
 
-	firstName := []byte(b.Bet.FirstName)
-	lastName := []byte(b.Bet.LastName)
+	firstName := []byte(bet.FirstName)
+	lastName := []byte(bet.LastName)
 
 	// luego longitud de first name, uint8
 	message = append(message, uint8(len(firstName)))
@@ -61,53 +75,74 @@ func (b *BetInfoPacket) Serialize() []byte {
 
 	// luego last name per se
 	message = append(message, lastName...)
-
-	totalLen := len(message)
-	message[0] = uint8(totalLen - 1)
 	return message
 }
 
-// recibe bytes con header
-func BetInfoFromBytes(bytes []byte, agencyId uint32) (*BetInfoPacket, error) {
-	// parsear de bytes
-	if len(bytes) < MIN_LEN_PACKET {
-		return nil, errors.New("Packet too short")
+func BetInfoFromBytes(bytes []byte, agencyId uint32, batchSize int) (*BetInfoPacket, error) {
+	if len(bytes) < HEADER_LEN {
+		return nil, errors.New("Header too short")
 	}
 	if bytes[0] != TYPE_BET {
 		return nil, errors.New("Invalid packet type")
 	}
+	offset := HEADER_LEN
+	bets := make([]lottery.Bet, 0, batchSize)
+	for range batchSize {
+		if len(bytes[offset:]) == 0 {
+			break
+		}
+		bet, newOffset, err := betFromBytes(bytes, offset, agencyId)
+		if err != nil {
+			return nil, err
+		}
+		bets = append(bets, bet)
+		offset = newOffset
+	}
+	packet := &BetInfoPacket{
+		Bets:      bets,
+		batchSize: batchSize,
+	}
+	return packet, nil
+}
+
+func betFromBytes(bytes []byte, offset int, agencyId uint32) (lottery.Bet, int, error) {
+	// parsear de bytes
+	betPacket := bytes[offset:]
+	if len(betPacket) < MIN_LEN_PACKET {
+		return lottery.Bet{}, 0, errors.New("Packet too short")
+	}
 
 	// document uint32, BE
-	document := binary.BigEndian.Uint32(bytes[1:5])
+	document := binary.BigEndian.Uint32(betPacket[1:5])
 
 	// luego number uint32, BE
-	number := binary.BigEndian.Uint32(bytes[5:9])
+	number := binary.BigEndian.Uint32(betPacket[5:9])
 
 	// luego birthdate, string len 10
-	birthdate := string(bytes[9:19])
+	birthdate := string(betPacket[9:19])
 	if !validateBirthdate(birthdate) {
-		return nil, errors.New("Invalid Birthdate format")
+		return lottery.Bet{}, 0, errors.New("Invalid Birthdate format")
 	}
 
 	// luego len de first name, uint8
-	firstNameLen := int(uint8(bytes[19]))
+	firstNameLen := int(uint8(betPacket[19]))
 
 	// luego len de last name, uint8
-	lastNameLen := int(uint8(bytes[20]))
+	lastNameLen := int(uint8(betPacket[20]))
 
 	// luego first name, string de largo variable
-	if len(bytes) < MIN_LEN_PACKET+firstNameLen {
-		return nil, errors.New("First Name too short")
+	if len(betPacket) < MIN_LEN_PACKET+firstNameLen {
+		return lottery.Bet{}, 0, errors.New("First Name too short")
 	}
 
-	firstName := string(bytes[MIN_LEN_PACKET : MIN_LEN_PACKET+firstNameLen])
+	firstName := string(betPacket[MIN_LEN_PACKET : MIN_LEN_PACKET+firstNameLen])
 
 	// luego lastName, string de largo variable
-	if len(bytes) < MIN_LEN_PACKET+firstNameLen+lastNameLen {
-		return nil, errors.New("Last Name too short")
+	if len(betPacket) < MIN_LEN_PACKET+firstNameLen+lastNameLen {
+		return lottery.Bet{}, 0, errors.New("Last Name too short")
 	}
 
-	lastName := string(bytes[MIN_LEN_PACKET+firstNameLen : MIN_LEN_PACKET+firstNameLen+lastNameLen])
+	lastName := string(betPacket[MIN_LEN_PACKET+firstNameLen : MIN_LEN_PACKET+firstNameLen+lastNameLen])
 
 	bet := lottery.Bet{
 		AgencyId:  agencyId,
@@ -118,9 +153,7 @@ func BetInfoFromBytes(bytes []byte, agencyId uint32) (*BetInfoPacket, error) {
 		LastName:  lastName,
 	}
 
-	betInfo := &BetInfoPacket{bet}
-
-	return betInfo, nil
+	return bet, offset + MIN_LEN_PACKET + firstNameLen + lastNameLen, nil
 }
 
 func validateBirthdate(birthdate string) bool {

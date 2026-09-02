@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -90,43 +91,47 @@ func (client *Client) Run() error {
 		return err
 	}
 
-	// leer archivo linea a linea
 	scanner := bufio.NewScanner(inputFile)
-	for scanner.Scan() {
-		logger.Info(mainAction, logger.InProgress, messageArgs...)
-
-		csvBet := scanner.Text()
-		bet, err := lottery.FromCsv(csvBet, client.config.AgencyId)
-		if err != nil {
-			logger.Error("parse-csv-bet", logger.InProgress, "agency-id", client.config.AgencyId, "err", err)
-			continue // skippear linea e intentar con la siguiente (TODO: revisar!)
+	keepScanning := true
+	for keepScanning {
+		// recorrer batch
+		batchSize := int(client.config.BatchSize)
+		bets := make([]lottery.Bet, 0, batchSize)
+		for len(bets) < batchSize {
+			keepScanning = scanner.Scan()
+			if !keepScanning {
+				break
+			}
+			csvBet := scanner.Text()
+			bet, err := lottery.FromCsv(csvBet, client.config.AgencyId)
+			if err != nil {
+				logger.Error("parse-csv-bet", logger.InProgress, "agency-id", client.config.AgencyId, "err", err)
+				return err
+			}
+			bets = append(bets, bet)
+		}
+		if err = scanner.Err(); err != nil {
+			logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+			return err
 		}
 
 		// enviar info de apuesta
-		packet := protocol.CreateBetInfoPacket(bet)
-		if err := safe_socket.SendAll(client.conn, packet.Serialize()); err != nil {
+		packet := protocol.CreateBetInfoPacket(bets, batchSize)
+		serializedPacket := packet.Serialize()
+		if !keepScanning {
+			protocol.SetLastPacketFlag(serializedPacket)
+		}
+		if err := safe_socket.SendAll(client.conn, serializedPacket); err != nil {
 			logger.Error("send-message", logger.Fail, messageArgs...)
 			return err
 		}
 		logger.Info("packet-sent", logger.InProgress, "agency-id", client.config.AgencyId, "len", len(packet.Serialize()))
 	}
-	if err = scanner.Err(); err != nil {
-		logger.Error("read-input-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-		return err
-	}
 
-	// enviar mensaje de fin
-	endPacket := protocol.CreateEndPacket()
-	if err := safe_socket.SendAll(client.conn, endPacket.Serialize()); err != nil {
-		logger.Error("send-end-bets", logger.Fail, messageArgs...)
-		return err
-	}
-	logger.Info("end-packet-sent", logger.InProgress, "agency-id", client.config.AgencyId)
-
-	// TODO: mejorar esto!
-	for true {
+	keepReceiving := true
+	for keepReceiving {
 		// leer primer byte de longitud
-		messageLength, err := safe_socket.RecvAll(client.conn, 1)
+		messageLength, err := safe_socket.RecvAll(client.conn, protocol.LENGTH_BYTES)
 		if err != nil {
 			logger.Error("recv-length", logger.Fail, messageArgs...)
 			return err
@@ -142,18 +147,23 @@ func (client *Client) Run() error {
 			return err
 		}
 
+		isLast := protocol.GetLastPacketFlag(responsePacket)
+		keepReceiving = !isLast
 		// actuar segun recepcion
 		switch responsePacket[0] {
 		case protocol.TYPE_BET:
-			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId)
+			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId, int(client.config.BatchSize))
 			if err != nil {
 				logger.Error("deserialize-bet-info", logger.Fail, messageArgs...)
 				return err
 			}
-			if _, err = fmt.Fprintln(outputFile, betInfo.Bet.ToCsv()); err != nil {
-				logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-				return err
+			for _, bet := range betInfo.Bets {
+				if _, err = fmt.Fprintln(outputFile, bet.ToCsv()); err != nil {
+					logger.Error("write-output-file", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+					return err
+				}
 			}
+		// SACAR ESTO (o refactor)!!
 		case protocol.TYPE_END:
 			_, err := protocol.EndFromBytes(responsePacket)
 			if err != nil {
@@ -163,7 +173,8 @@ func (client *Client) Run() error {
 			logger.Info("end-packet-received", logger.Success, messageArgs...)
 			return nil
 		default:
-			continue // paquete invalido, por ahora lo ignoro (TODO: revisar!)
+			logger.Error("deserialize-packet", logger.Fail, messageArgs...)
+			return errors.New("Unknown packet type")
 		}
 	}
 	return nil
