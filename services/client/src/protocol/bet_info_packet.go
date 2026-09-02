@@ -113,22 +113,22 @@ func betFromBytes(bytes []byte, offset int, agencyId uint32) (lottery.Bet, int, 
 	}
 
 	// document uint32, BE
-	document := binary.BigEndian.Uint32(betPacket[1:5])
+	document := binary.BigEndian.Uint32(betPacket[0:4])
 
 	// luego number uint32, BE
-	number := binary.BigEndian.Uint32(betPacket[5:9])
+	number := binary.BigEndian.Uint32(betPacket[4:8])
 
 	// luego birthdate, string len 10
-	birthdate := string(betPacket[9:19])
+	birthdate := string(betPacket[8:18])
 	if !validateBirthdate(birthdate) {
 		return lottery.Bet{}, 0, errors.New("Invalid Birthdate format")
 	}
 
 	// luego len de first name, uint8
-	firstNameLen := int(uint8(betPacket[19]))
+	firstNameLen := int(uint8(betPacket[18]))
 
 	// luego len de last name, uint8
-	lastNameLen := int(uint8(betPacket[20]))
+	lastNameLen := int(uint8(betPacket[19]))
 
 	// luego first name, string de largo variable
 	if len(betPacket) < MIN_LEN_PACKET+firstNameLen {

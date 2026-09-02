@@ -12,12 +12,13 @@ class HelloPacket(Packet):
         return TYPE_HELLO
 
     def serialize(self):
-        message = bytes()
-        message += self.header()
-        message += self.agency_id.to_bytes(5, "big", signed=False)
-        message += self.batch_size.to_bytes(1, "big", signed=False)
+        message = bytearray([0])
+        message.append(self.header())
+        message.append(self.agency_id.to_bytes(5, "big", signed=False))
+        message.append(self.batch_size.to_bytes(1, "big", signed=False))
         length = len(message).to_bytes(1, "big", signed=False)
-        return length + message
+        message[0] = length
+        return message
 
 def hello_packet_from_bytes(bytes: bytes) -> HelloPacket:
     if len(bytes) != HELLO_PACKET_LEN:

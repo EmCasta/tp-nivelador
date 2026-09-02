@@ -10,10 +10,11 @@ class EndPacket(Packet):
         return TYPE_END
 
     def serialize(self):
-        message = bytes()
-        message += self.header()
+        message = bytearray([0])
+        message.append(self.header())
         length = len(message).to_bytes(1, "big", signed=False)
-        return length + message
+        message[0] = length
+        return message
 
 def end_from_bytes(bytes: bytes) -> EndPacket:
     if len(bytes) != END_PACKET_LEN:
