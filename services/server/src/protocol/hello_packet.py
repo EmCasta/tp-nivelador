@@ -1,11 +1,12 @@
 from protocol.packet import Packet, TYPE_HELLO
 
-HELLO_PACKET_LEN = 5
+HELLO_PACKET_LEN = 6
 
 class HelloPacket(Packet):
-    def __init__(self, agency_id: int):
+    def __init__(self, agency_id: int, batch_size: int):
         super().__init__()
         self.agency_id = agency_id
+        self.batch_size = batch_size
 
     def get_type(self):
         return TYPE_HELLO
@@ -14,6 +15,7 @@ class HelloPacket(Packet):
         message = bytes()
         message += self.header()
         message += self.agency_id.to_bytes(5, "big", signed=False)
+        message += self.batch_size.to_bytes(1, "big", signed=False)
         length = len(message).to_bytes(1, "big", signed=False)
         return length + message
 
@@ -23,5 +25,6 @@ def hello_packet_from_bytes(bytes: bytes) -> HelloPacket:
     if bytes[0] != TYPE_HELLO:
         raise ValueError("Invalid packet type")
 
-    agency_id = int.from_bytes(bytes[1:], "big", signed=False)
-    return HelloPacket(agency_id)
+    agency_id = int.from_bytes(bytes[1:5], "big", signed=False)
+    batch_size = int.from_bytes(bytes[5:], "big", signed=False)
+    return HelloPacket(agency_id, batch_size)

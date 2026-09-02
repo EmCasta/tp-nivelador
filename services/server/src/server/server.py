@@ -33,7 +33,8 @@ class Server:
             )
             hello_packet = hello_packet_from_bytes(packet)
             client_agency_id = hello_packet.agency_id
-            logger.info("hello-packet-received", logger.LogResult.in_progress, "agency-id", client_agency_id, "actual-len", len(packet))
+            batch_size = hello_packet.batch_size
+            logger.info("hello-packet-received", logger.LogResult.in_progress, "agency-id", client_agency_id, "batch_size", batch_size)
 
             while True:
                 # recibir tamaño primero
