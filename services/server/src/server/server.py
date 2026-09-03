@@ -1,6 +1,7 @@
 import socket
 import threading
 import signal
+import os
 import logger
 import safe_socket
 from protocol.hello_packet import hello_packet_from_bytes
@@ -60,10 +61,9 @@ class Server:
         self.quorum_barrier.abort()
         for thread in self.threads:
             thread.join()
+        os.remove(STORAGE_PATH)
         self.is_running = False
         logger.info("shutdown", logger.LogResult.success)
-        # faltaria manejar el archivo!
-    
 
     def _handle_client(self, client_socket):
         action = "handle-client"
@@ -147,18 +147,17 @@ class Server:
         except threading.BrokenBarrierError:
             return
 
+        bets = []
         with self.file_lock:
-            bets = []
             for bet in lottery.load_bets():
                 if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
                     bets.append(bet)
-            if len(bets) == 0:
-                return
-            actual_offset = 0
-            while actual_offset < len(bets):
-                packet = BetInfoPacket(bets[actual_offset:actual_offset+client_info.batch_size]).serialize()
-                actual_offset += client_info.batch_size
-                if actual_offset >= len(bets):
-                    set_last_packet_flag(packet, LENGTH_BYTES)
-                safe_socket.send_all(client_socket, packet)
-
+        if len(bets) == 0:
+            return
+        actual_offset = 0
+        while actual_offset < len(bets):
+            packet = BetInfoPacket(bets[actual_offset:actual_offset+client_info.batch_size]).serialize()
+            actual_offset += client_info.batch_size
+            if actual_offset >= len(bets):
+                set_last_packet_flag(packet, LENGTH_BYTES)
+            safe_socket.send_all(client_socket, packet)

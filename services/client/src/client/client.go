@@ -57,27 +57,31 @@ func (client *Client) Run() error {
 	defer outputFile.Close()
 
 	// enviar mensaje de hello
-	if err := client.sendHello(); err != nil {
+	if err := client.sendHello(); err != nil && !errors.Is(err, net.ErrClosed) {
 		logger.Error("send-hello", logger.Fail, messageArgs...)
 		return err
 	}
 	logger.Info("client-run:sent-hello", logger.InProgress, messageArgs...)
 
 	// enviar apuestas
-	if err = client.sendBets(inputFile); err != nil {
+	if err = client.sendBets(inputFile); err != nil && !errors.Is(err, net.ErrClosed) {
 		logger.Error("send-bets", logger.Fail, messageArgs...)
 		return err
 	}
 	logger.Info("client-run:sent-bets", logger.InProgress, messageArgs...)
 
 	// recibir ganadores
-	if err = client.receiveWinners(outputFile); err != nil {
+	if err = client.receiveWinners(outputFile); err != nil && !errors.Is(err, net.ErrClosed) {
 		logger.Error("receive-winners", logger.Fail, messageArgs...)
 		return err
 	}
 	logger.Info("client-run:received-winners", logger.InProgress, messageArgs...)
 
 	return nil
+}
+
+func (client *Client) GracefulShutdown() {
+	client.conn.Close()
 }
 
 func connectToServer(host, port string) (net.Conn, error) {
@@ -160,7 +164,10 @@ func (client *Client) sendBets(inputFile *os.File) error {
 		if err := safe_socket.SendAll(client.conn, serializedPacket); err != nil {
 			return err
 		}
-		//logger.Info("client-run:sending-bets", logger.InProgress, "sending-batch:last", !keepScanning, "bets", bets)
+		logger.Info("batch", logger.InProgress,
+			"bets", len(bets),
+			"bytes", len(serializedPacket),
+		)
 	}
 	return nil
 }
@@ -179,13 +186,11 @@ func (client *Client) receiveWinners(outputFile *os.File) error {
 			return err
 		}
 
-		logger.Info("response-packet", logger.InProgress, responsePacket[0])
 		isLast := protocol.GetLastPacketFlag(responsePacket, 0)
 		keepReceiving = !isLast
 		switch responsePacket[0] {
 		case protocol.TYPE_BET:
 			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId, int(client.config.BatchSize))
-			logger.Info("winners-recvd", logger.InProgress, "keep-receiving", keepReceiving)
 			if err != nil {
 				return err
 			}
@@ -194,7 +199,6 @@ func (client *Client) receiveWinners(outputFile *os.File) error {
 					return err
 				}
 			}
-			logger.Info("bets-received", logger.InProgress, "bets", betInfo.Bets)
 		default:
 			return errors.New("Unknown packet type")
 		}
