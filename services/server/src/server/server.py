@@ -56,6 +56,7 @@ class Server:
 
             logger.info("sending-winners", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
             self._send_winners(client_socket, lottery, client_info)
+            client_socket.close()
 
         except Exception as e:
             logger.error(
@@ -121,3 +122,7 @@ class Server:
                 if not keep_sending:
                     set_last_packet_flag(packet, LENGTH_BYTES)
                 safe_socket.send_all(client_socket, packet)
+
+        with self.quorum_condition:
+            self.client_count -= 1
+            self.quorum_condition.notify_all()
