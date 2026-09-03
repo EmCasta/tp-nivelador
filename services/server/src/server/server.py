@@ -1,5 +1,6 @@
 import socket
 import threading
+import signal
 import logger
 import safe_socket
 from protocol.hello_packet import hello_packet_from_bytes
@@ -21,12 +22,17 @@ class Server:
         self.agency_quorum_min = agency_quorum_min
         self.file_lock = threading.Lock()
         self.quorum_barrier = threading.Barrier(agency_quorum_min)
+        self.threads = []
+        self.sockets = set()
+        self.sockets_lock = threading.Lock()
+        signal.signal(signal.SIGTERM, self.shutdown_gracefully)
 
     def run(self):
         action = "accept-connection"
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
             server_socket.bind((self.server_host, self.server_port))
             server_socket.listen()
+            self.sockets.add(server_socket)
             while True:
                 try:
                     logger.info(action, logger.LogResult.in_progress)
@@ -38,11 +44,22 @@ class Server:
 
                 client_thread = threading.Thread(target=self._handle_client, args=(client_socket,))
                 client_thread.start()
+                self.threads.append(client_thread)
+
+    def shutdown_gracefully(self):
+        with self.sockets_lock:
+            for sock in self.sockets:
+                sock.close()
+        for thread in self.threads:
+            thread.join()
+        # faltaria manejar el archivo!
     
 
     def _handle_client(self, client_socket):
         action = "handle-client"
         try:
+            self._store_socket(client_socket)
+
             logger.info(action, logger.LogResult.in_progress)
             lottery = Lottery(STORAGE_PATH)
 
@@ -55,13 +72,26 @@ class Server:
 
             logger.info("sending-winners", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
             self._send_winners(client_socket, lottery, client_info)
-            client_socket.close()
 
         except Exception as e:
             logger.error(
                 action, logger.LogResult.fail,
                 "err", e, "traceback", traceback.format_exc())
             raise e
+
+        finally:
+            self._cleanup(client_socket)
+
+    def _cleanup(self, client_socket):
+        with self.sockets_lock:
+            if client_socket in self.sockets:
+                self.sockets.remove(client_socket)
+        client_socket.close()
+
+    def _store_socket(self, client_socket):
+        with self.sockets_lock:
+            self.sockets.add(client_socket)
+        
 
     def _wait_for_hello(self, client_socket):
         message_length = safe_socket.recv_all(
@@ -92,9 +122,6 @@ class Server:
                 bet_info = bet_info_from_bytes(packet, client_info.agency_id, client_info.batch_size)
                 with self.file_lock:
                     lottery.store_bets(bet_info.bets)
-                with self.quorum_condition:
-                    self.client_count += 1
-                    self.quorum_condition.notify_all()
             else:
                 raise ValueError("Invalid packet type")
 
