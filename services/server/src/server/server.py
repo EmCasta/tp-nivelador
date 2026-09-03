@@ -25,6 +25,7 @@ class Server:
         self.threads = []
         self.sockets = set()
         self.sockets_lock = threading.Lock()
+        self.is_running = True
         signal.signal(signal.SIGTERM, self.shutdown_gracefully)
 
     def run(self):
@@ -33,10 +34,16 @@ class Server:
             server_socket.bind((self.server_host, self.server_port))
             server_socket.listen()
             self.sockets.add(server_socket)
-            while True:
+            while self.is_running:
                 try:
                     logger.info(action, logger.LogResult.in_progress)
                     client_socket, _ = server_socket.accept()
+                except OSError:
+                    # si ocurre esta excepcion, el server cerro el socket y hay que terminar
+                    logger.info(
+                        action, logger.LogResult.in_progress,
+                        "OSerror: closing client")
+                    return
                 except Exception as e:
                     logger.error(action, logger.LogResult.fail)
                     raise e
@@ -46,12 +53,15 @@ class Server:
                 client_thread.start()
                 self.threads.append(client_thread)
 
-    def shutdown_gracefully(self):
+    def shutdown_gracefully(self, signum, frame):
         with self.sockets_lock:
             for sock in self.sockets:
                 sock.close()
+        self.quorum_barrier.abort()
         for thread in self.threads:
             thread.join()
+        self.is_running = False
+        logger.info("shutdown", logger.LogResult.success)
         # faltaria manejar el archivo!
     
 
@@ -73,6 +83,12 @@ class Server:
             logger.info("sending-winners", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
             self._send_winners(client_socket, lottery, client_info)
 
+        except OSError:
+            # si ocurre esta excepcion, el server cerro el socket y hay que terminar
+            logger.info(
+                action, logger.LogResult.in_progress,
+                "OSerror: closing client")
+            return
         except Exception as e:
             logger.error(
                 action, logger.LogResult.fail,
@@ -126,23 +142,23 @@ class Server:
                 raise ValueError("Invalid packet type")
 
     def _send_winners(self, client_socket, lottery, client_info):
-        self.quorum_barrier.wait()
+        try:
+            self.quorum_barrier.wait()
+        except threading.BrokenBarrierError:
+            return
 
         with self.file_lock:
-            keep_sending = True
-            bet_iterator = lottery.load_bets()
-            while keep_sending:
-                bets = []
-                while len(bets) < client_info.batch_size:
-                    bet = next(bet_iterator, None)
-                    if bet is None:
-                        keep_sending = False
-                        break
-                    if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
-                        bets.append(bet)
-                if len(bets) == 0:
-                    return
-                packet = BetInfoPacket(bets).serialize()
-                if not keep_sending:
+            bets = []
+            for bet in lottery.load_bets():
+                if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
+                    bets.append(bet)
+            if len(bets) == 0:
+                return
+            actual_offset = 0
+            while actual_offset < len(bets):
+                packet = BetInfoPacket(bets[actual_offset:actual_offset+client_info.batch_size]).serialize()
+                actual_offset += client_info.batch_size
+                if actual_offset >= len(bets):
                     set_last_packet_flag(packet, LENGTH_BYTES)
                 safe_socket.send_all(client_socket, packet)
+
