@@ -1,24 +1,24 @@
-from protocol.packet import Packet, TYPE_END
+from protocol.packet import Packet, TYPE_ACK
 
-END_PACKET_LEN = 1
+ACK_PACKET_LEN = 1
 
-class EndPacket(Packet):
+class AckPacket(Packet):
     def __init__(self):
         super().__init__()
 
     def get_type(self):
-        return TYPE_END
+        return TYPE_ACK
 
     def serialize(self):
         message = bytearray()
-        length = END_PACKET_LEN.to_bytes(2, "big", signed=False)
+        length = ACK_PACKET_LEN.to_bytes(2, "big", signed=False)
         message.extend(length)
         message.extend(self.header())
         return message
 
-def end_from_bytes(bytes: bytes) -> EndPacket:
-    if len(bytes) != END_PACKET_LEN:
+def ack_from_bytes(bytes: bytes) -> AckPacket:
+    if len(bytes) != ACK_PACKET_LEN:
         raise ValueError("Invalid packet length")
-    if bytes[0] != TYPE_END:
+    if bytes[0] != TYPE_ACK:
         raise ValueError("Invalid packet type")
-    return EndPacket()
+    return AckPacket()

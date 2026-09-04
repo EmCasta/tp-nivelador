@@ -3,7 +3,7 @@ package protocol
 const (
 	TYPE_HELLO      uint8 = 0x00
 	TYPE_BET        uint8 = 0x01
-	TYPE_END        uint8 = 0x02
+	TYPE_ACK        uint8 = 0x02
 	FIRST_BIT       byte  = 0b10000000
 	LAST_SEVEN_BITS byte  = 0b01111111
 	BIT_OFFSET      byte  = 7

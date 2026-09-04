@@ -7,6 +7,8 @@ import safe_socket
 from protocol.hello_packet import hello_packet_from_bytes
 from protocol.bet_info_packet import bet_info_from_bytes, BetInfoPacket
 from protocol.packet import TYPE_BET, LENGTH_BYTES, get_last_packet_flag, set_last_packet_flag
+from protocol.ack_packet import AckPacket, TYPE_ACK
+from server.utils import read_packet
 from server.client_info import ClientInfo
 from lottery import Lottery
 import traceback
@@ -43,7 +45,7 @@ class Server:
                     # si ocurre esta excepcion, el server cerro el socket y hay que terminar
                     logger.info(
                         action, logger.LogResult.in_progress,
-                        "OSerror: closing client")
+                        "OSerror: closing server")
                     return
                 except Exception as e:
                     logger.error(action, logger.LogResult.fail)
@@ -110,36 +112,29 @@ class Server:
         
 
     def _wait_for_hello(self, client_socket):
-        message_length = safe_socket.recv_all(
-            client_socket, LENGTH_BYTES
-        )
-        length = int.from_bytes(message_length, "big", signed=False)
-        packet = safe_socket.recv_all(
-            client_socket, length
-        )
+        # esperar mensaje de hello
+        packet = read_packet(client_socket)
         hello_packet = hello_packet_from_bytes(packet)
+        # enviar ack si llego correctamente
+        ack = AckPacket().serialize()
+        safe_socket.send_all(client_socket, ack)
         return hello_packet
 
     def _receive_bets(self, client_socket, lottery, client_info):
         keep_receiving = True
         while keep_receiving:
-            message_length = safe_socket.recv_all(
-                client_socket, LENGTH_BYTES
-            )
-            length = int.from_bytes(message_length, "big", signed=False)
-            packet = safe_socket.recv_all(
-                client_socket, length
-            )
-            packet = bytearray(packet)
+            # esperar packete con batch de bets
+            packet = bytearray(read_packet(client_socket))
 
             is_last = get_last_packet_flag(packet, 0)
             keep_receiving = not is_last
-            if packet[0] == TYPE_BET:
-                bet_info = bet_info_from_bytes(packet, client_info.agency_id, client_info.batch_size)
-                with self.file_lock:
-                    lottery.store_bets(bet_info.bets)
-            else:
-                raise ValueError("Invalid packet type")
+            bet_info = bet_info_from_bytes(packet, client_info.agency_id, client_info.batch_size)
+            with self.file_lock:
+                lottery.store_bets(bet_info.bets)
+            # todas las bets se procesaron correctamente: enviar ack
+            ack = AckPacket().serialize()
+            safe_socket.send_all(client_socket, ack)
+            
 
     def _send_winners(self, client_socket, lottery, client_info):
         try:
@@ -153,11 +148,22 @@ class Server:
                 if lottery.has_won(bet) and bet.agency_id == client_info.agency_id:
                     bets.append(bet)
         if len(bets) == 0:
+            # no hay ganadores: mandar ack, esperar respuesta y terminar
+            ack = AckPacket().serialize()
+            safe_socket.send_all(client_socket, ack)
+            packet = read_packet(client_socket)
+            if packet[0] != TYPE_ACK:
+                raise ValueError("Invalid packet type: ACK expected")
             return
+        
         actual_offset = 0
         while actual_offset < len(bets):
+            # enviar batches con ganadores, esperando ack para cada uno de ellos
             packet = BetInfoPacket(bets[actual_offset:actual_offset+client_info.batch_size]).serialize()
             actual_offset += client_info.batch_size
             if actual_offset >= len(bets):
                 set_last_packet_flag(packet, LENGTH_BYTES)
             safe_socket.send_all(client_socket, packet)
+            packet = read_packet(client_socket)
+            if packet[0] != TYPE_ACK:
+                raise ValueError("Invalid packet type: ACK expected")

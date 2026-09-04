@@ -2,7 +2,6 @@ package client
 
 import (
 	"bufio"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -121,8 +120,18 @@ func (client *Client) openFiles() (*os.File, *os.File, error) {
 }
 
 func (client *Client) sendHello() error {
+	// enviar paquete de hello: inicio de conexion
 	helloPacket := protocol.CreateHelloPacket(client.config.AgencyId, client.config.BatchSize)
 	if err := safe_socket.SendAll(client.conn, helloPacket.Serialize()); err != nil {
+		return err
+	}
+	ack, err := readPacket(client.conn)
+	if err != nil {
+		return err
+	}
+	// esperar por ack
+	_, err = protocol.AckFromBytes(ack)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -135,7 +144,7 @@ func (client *Client) sendBets(inputFile *os.File) error {
 	keepScanning := scanner.Scan()
 	csvBet := scanner.Text()
 	for keepScanning {
-		// recorrer batch
+		// recorrer bets para formar un batch
 		bets := make([]lottery.Bet, 0, batchSize)
 		for len(bets) < batchSize {
 			bet, err := lottery.FromCsv(csvBet, client.config.AgencyId)
@@ -156,6 +165,7 @@ func (client *Client) sendBets(inputFile *os.File) error {
 		if len(bets) == 0 {
 			break
 		}
+		// ya se tiene batch, enviarlo
 		packet := protocol.CreateBetInfoPacket(bets)
 		serializedPacket := packet.Serialize()
 		if !keepScanning {
@@ -164,10 +174,15 @@ func (client *Client) sendBets(inputFile *os.File) error {
 		if err := safe_socket.SendAll(client.conn, serializedPacket); err != nil {
 			return err
 		}
-		logger.Info("batch", logger.InProgress,
-			"bets", len(bets),
-			"bytes", len(serializedPacket),
-		)
+		// esperar ack del server
+		ack, err := readPacket(client.conn)
+		if err != nil {
+			return err
+		}
+		if _, err = protocol.AckFromBytes(ack); err != nil {
+			return err
+		}
+
 	}
 	return nil
 }
@@ -175,13 +190,7 @@ func (client *Client) sendBets(inputFile *os.File) error {
 func (client *Client) receiveWinners(outputFile *os.File) error {
 	keepReceiving := true
 	for keepReceiving {
-		messageLength, err := safe_socket.RecvAll(client.conn, protocol.LENGTH_BYTES)
-		if err != nil {
-			return err
-		}
-		logger.Info("receiving-winners", logger.InProgress, "message-len", binary.BigEndian.Uint16(messageLength))
-		length := binary.BigEndian.Uint16(messageLength)
-		responsePacket, err := safe_socket.RecvAll(client.conn, int(length))
+		responsePacket, err := readPacket(client.conn)
 		if err != nil {
 			return err
 		}
@@ -190,6 +199,7 @@ func (client *Client) receiveWinners(outputFile *os.File) error {
 		keepReceiving = !isLast
 		switch responsePacket[0] {
 		case protocol.TYPE_BET:
+			// parsear y guardar bets ganadoras
 			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId, int(client.config.BatchSize))
 			if err != nil {
 				return err
@@ -198,6 +208,17 @@ func (client *Client) receiveWinners(outputFile *os.File) error {
 				if _, err = fmt.Fprintln(outputFile, bet.ToCsv()); err != nil {
 					return err
 				}
+			}
+			ack := protocol.CreateAckPacket().Serialize()
+			if err := safe_socket.SendAll(client.conn, ack); err != nil {
+				return err
+			}
+		case protocol.TYPE_ACK:
+			// llego un ack en vez de winners: no hay winners
+			// enviar ack y terminar
+			ack := protocol.CreateAckPacket().Serialize()
+			if err := safe_socket.SendAll(client.conn, ack); err != nil {
+				return err
 			}
 		default:
 			return errors.New("Unknown packet type")
