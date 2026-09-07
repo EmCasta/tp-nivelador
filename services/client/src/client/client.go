@@ -44,12 +44,14 @@ func NewClient(config ClientConfig) (*Client, error) {
 
 func (client *Client) Run() error {
 	messageArgs := []any{"agency-id", client.config.AgencyId}
-	logger.Info("client-run", logger.InProgress, messageArgs...)
+	action := "client-run"
+	logger.Info(action, logger.InProgress, messageArgs...)
 	defer client.conn.Close()
 
 	inputFile, outputFile, err := client.openFiles()
 	if err != nil {
-		logger.Error("create-output-file", logger.Fail, messageArgs...)
+		errArgs := []any{"err", err}
+		logger.Error(action+":open-files", logger.Fail, append(messageArgs, errArgs...))
 		return err
 	}
 	defer inputFile.Close()
@@ -57,28 +59,32 @@ func (client *Client) Run() error {
 
 	// enviar mensaje de hello
 	if err := client.sendHello(); err != nil && !errors.Is(err, net.ErrClosed) {
-		logger.Error("send-hello", logger.Fail, messageArgs...)
+		errArgs := []any{"err", err}
+		logger.Error(action+":send-hello", logger.Fail, append(messageArgs, errArgs...))
 		return err
 	}
-	logger.Info("client-run:sent-hello", logger.InProgress, messageArgs...)
+	logger.Info(action+":hello-sent", logger.InProgress, messageArgs...)
 
 	// enviar apuestas
 	if err = client.sendBets(inputFile); err != nil && !errors.Is(err, net.ErrClosed) {
-		logger.Error("send-bets", logger.Fail, messageArgs...)
+		errArgs := []any{"err", err}
+		logger.Error("send-bets", logger.Fail, append(messageArgs, errArgs...))
 		return err
 	}
-	logger.Info("client-run:sent-bets", logger.InProgress, messageArgs...)
+	logger.Info(action+":sent-bets", logger.InProgress, messageArgs...)
 
 	// recibir ganadores
 	if err = client.receiveWinners(outputFile); err != nil && !errors.Is(err, net.ErrClosed) {
-		logger.Error("receive-winners", logger.Fail, messageArgs...)
+		errArgs := []any{"err", err}
+		logger.Error("receive-winners", logger.Fail, append(messageArgs, errArgs...))
 		return err
 	}
-	logger.Info("client-run:received-winners", logger.InProgress, messageArgs...)
+	logger.Info(action+":winners-received", logger.InProgress, messageArgs...)
 
 	return nil
 }
 
+// Permite cerrar y limpiar correctamente los recursos del cliente
 func (client *Client) GracefulShutdown() {
 	client.conn.Close()
 }
@@ -104,6 +110,7 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
+// Abre los archivos de entrada y salida, y los retorna en ese orden
 func (client *Client) openFiles() (*os.File, *os.File, error) {
 	// abrir archivo de entrada
 	inputFile, err := os.Open(client.config.InputFile)
@@ -119,28 +126,23 @@ func (client *Client) openFiles() (*os.File, *os.File, error) {
 	return inputFile, outputFile, nil
 }
 
+// Envia un paquete de tipo HELLO al servidor con la informacion del cliente
 func (client *Client) sendHello() error {
 	// enviar paquete de hello: inicio de conexion
 	helloPacket := protocol.CreateHelloPacket(client.config.AgencyId, client.config.BatchSize)
 	if err := safe_socket.SendAll(client.conn, helloPacket.Serialize()); err != nil {
 		return err
 	}
-	ack, err := readPacket(client.conn)
-	if err != nil {
-		return err
-	}
 	// esperar por ack
-	_, err = protocol.AckFromBytes(ack)
-	if err != nil {
-		return err
-	}
-	return nil
+	return client.waitForAck()
 }
 
+// Envia todas las apuestas presentes en el archivo de entrada. Si no todas pudieron enviarse
+// correctamente retorna error
 func (client *Client) sendBets(inputFile *os.File) error {
-	scanner := bufio.NewScanner(inputFile)
 	batchSize := int(client.config.BatchSize)
-	logger.Info("client-run:sending-bets", logger.InProgress, "batch-size", batchSize)
+	logger.Info("send-bets", logger.InProgress, "batch-size", batchSize)
+	scanner := bufio.NewScanner(inputFile)
 	keepScanning := scanner.Scan()
 	csvBet := scanner.Text()
 	for keepScanning {
@@ -166,20 +168,11 @@ func (client *Client) sendBets(inputFile *os.File) error {
 			break
 		}
 		// ya se tiene batch, enviarlo
-		packet := protocol.CreateBetInfoPacket(bets)
-		serializedPacket := packet.Serialize()
-		if !keepScanning {
-			protocol.SetLastPacketFlag(serializedPacket, protocol.LENGTH_BYTES)
-		}
-		if err := safe_socket.SendAll(client.conn, serializedPacket); err != nil {
+		if err := client.sendBatch(bets, !keepScanning); err != nil {
 			return err
 		}
 		// esperar ack del server
-		ack, err := readPacket(client.conn)
-		if err != nil {
-			return err
-		}
-		if _, err = protocol.AckFromBytes(ack); err != nil {
+		if err := client.waitForAck(); err != nil {
 			return err
 		}
 
@@ -187,42 +180,85 @@ func (client *Client) sendBets(inputFile *os.File) error {
 	return nil
 }
 
+// Espera por un mensaje de tipo ACK del servidor
+func (client *Client) waitForAck() error {
+	ack, err := readPacket(client.conn)
+	if err != nil {
+		return err
+	}
+	if _, err = protocol.AckFromBytes(ack); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Envia un batch de apuestas al servidor
+func (client *Client) sendBatch(bets []lottery.Bet, isLast bool) error {
+	packet := protocol.CreateBetInfoPacket(bets)
+	serializedPacket := packet.Serialize()
+	if isLast { // si es ultimo batch, setear flag de ultimo paquete
+		protocol.SetLastPacketFlag(serializedPacket, protocol.LENGTH_BYTES)
+	}
+	return safe_socket.SendAll(client.conn, serializedPacket)
+}
+
+// Recibe los ganadores de la loteria. Si no todos fueron procesados correctamente,
+// retorna error
 func (client *Client) receiveWinners(outputFile *os.File) error {
+	logger.Info("receive-winners", logger.InProgress)
 	keepReceiving := true
 	for keepReceiving {
+		// leer paquete del server con winners
 		responsePacket, err := readPacket(client.conn)
 		if err != nil {
 			return err
 		}
-
+		// ver tipo de paquete y parsear
 		isLast := protocol.GetLastPacketFlag(responsePacket, 0)
 		keepReceiving = !isLast
 		switch responsePacket[0] {
 		case protocol.TYPE_BET:
 			// parsear y guardar bets ganadoras
-			betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId, int(client.config.BatchSize))
-			if err != nil {
-				return err
-			}
-			for _, bet := range betInfo.Bets {
-				if _, err = fmt.Fprintln(outputFile, bet.ToCsv()); err != nil {
-					return err
-				}
-			}
-			ack := protocol.CreateAckPacket().Serialize()
-			if err := safe_socket.SendAll(client.conn, ack); err != nil {
+			if err := client.betReceptionAction(responsePacket, outputFile); err != nil {
 				return err
 			}
 		case protocol.TYPE_ACK:
 			// llego un ack en vez de winners: no hay winners
 			// enviar ack y terminar
-			ack := protocol.CreateAckPacket().Serialize()
-			if err := safe_socket.SendAll(client.conn, ack); err != nil {
+			if err := client.sendAck(); err != nil {
 				return err
 			}
 		default:
 			return errors.New("Unknown packet type")
 		}
+	}
+	return nil
+}
+
+// Recibe un batch del servidor con ganadores de la loteria
+func (client *Client) betReceptionAction(responsePacket []byte, outputFile *os.File) error {
+	// parsear y guardar bets ganadoras
+	betInfo, err := protocol.BetInfoFromBytes(responsePacket, client.config.AgencyId, int(client.config.BatchSize))
+	if err != nil {
+		return err
+	}
+	for _, bet := range betInfo.Bets {
+		if _, err = fmt.Fprintln(outputFile, bet.ToCsv()); err != nil {
+			return err
+		}
+	}
+	ack := protocol.CreateAckPacket().Serialize()
+	if err := safe_socket.SendAll(client.conn, ack); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Envia un mensaje de tipo ACK al servidor
+func (client *Client) sendAck() error {
+	ack := protocol.CreateAckPacket().Serialize()
+	if err := safe_socket.SendAll(client.conn, ack); err != nil {
+		return err
 	}
 	return nil
 }

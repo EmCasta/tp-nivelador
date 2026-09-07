@@ -17,6 +17,7 @@ const BIRTHDATE_FIELDS int = 3
 const BIRTHDATE_YEAR_DIGITS int = 4
 const BIRTHDATE_DAY_MONTH_DIGITS int = 2
 
+// Paquete que contiene informacion de apuestas, puede tener hasta BATCH_SIZE apuestas
 type BetInfoPacket struct {
 	Bets []lottery.Bet
 }
@@ -30,7 +31,7 @@ func (b *BetInfoPacket) GetType() uint8 {
 }
 
 func (b *BetInfoPacket) Header() []byte {
-	return []byte{byte(b.GetType())}
+	return GetPacketHeader(b)
 }
 
 func (b *BetInfoPacket) Serialize() []byte {
@@ -83,6 +84,7 @@ func parseBets(bytes []byte, agencyId uint32, batchSize int) ([]lottery.Bet, err
 		if len(bytes[offset:]) == 0 {
 			break
 		}
+		// parsear bet y correr el offset segun su longitud
 		bet, newOffset, err := betFromBytes(bytes, offset, agencyId)
 		if err != nil {
 			return nil, err

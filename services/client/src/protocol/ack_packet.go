@@ -7,6 +7,7 @@ import (
 
 const ACK_PACKET_LEN int = 1
 
+// Paquete de ACK, no tiene información salvo su tipo
 type AckPacket struct{}
 
 func CreateAckPacket() Packet {
@@ -18,7 +19,7 @@ func (e *AckPacket) GetType() uint8 {
 }
 
 func (e *AckPacket) Header() []byte {
-	return []byte{e.GetType()}
+	return GetPacketHeader(e)
 }
 
 func (e *AckPacket) Serialize() []byte {

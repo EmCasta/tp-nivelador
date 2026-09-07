@@ -6,6 +6,8 @@ import (
 
 const HELLO_PACKET_LEN int = 6
 
+// Paquete de inicio de conexion, tiene informacion del cliente para el servidor
+// como el id de agencia y batch size
 type HelloPacket struct {
 	agencyId  uint32
 	batchSize uint8
@@ -20,7 +22,7 @@ func (h *HelloPacket) GetType() uint8 {
 }
 
 func (h *HelloPacket) Header() []byte {
-	return []byte{h.GetType()}
+	return GetPacketHeader(h)
 }
 
 func (h *HelloPacket) Serialize() []byte {

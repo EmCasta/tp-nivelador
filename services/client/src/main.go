@@ -97,9 +97,12 @@ func run() int {
 	handleSigtermSignal(client)
 
 	if err := client.Run(); err != nil {
+		client.GracefulShutdown()
 		logger.Error("client-run", logger.Fail, "err", err)
 		return 1
 	}
+	client.GracefulShutdown()
+	logger.Info("client-run", logger.Success)
 	return 0
 }
 

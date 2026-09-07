@@ -11,6 +11,7 @@ const EXPECTED_FIELD_NUMBER int = 5
 const BASE_10 int = 10
 const BIT_SIZE int = 32
 
+// Informacion de una apuesta
 type Bet struct {
 	AgencyId  uint32
 	Document  uint32
@@ -20,7 +21,7 @@ type Bet struct {
 	LastName  string
 }
 
-// podria mover esto a un paquete storage o algo
+// Obtener apuesta de .csv
 func FromCsv(csv string, agencyId uint32) (Bet, error) {
 	fields := strings.Split(csv, CSV_DELIMITER)
 	if len(fields) != EXPECTED_FIELD_NUMBER {
@@ -50,7 +51,8 @@ func FromCsv(csv string, agencyId uint32) (Bet, error) {
 	return bet, nil
 }
 
-func (b Bet) ToCsv() string {
+// Convertir apuesta a formato .csv
+func (b *Bet) ToCsv() string {
 	document := strconv.FormatUint(uint64(b.Document), BASE_10)
 	number := strconv.FormatUint(uint64(b.Number), BASE_10)
 	fields := []string{b.FirstName, b.LastName, document, b.Birthdate, number}
