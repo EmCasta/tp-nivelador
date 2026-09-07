@@ -11,7 +11,6 @@ from protocol.ack_packet import AckPacket, TYPE_ACK
 from server.utils import read_packet
 from server.client_info import ClientInfo
 from lottery import Lottery
-import traceback
 
 STORAGE_PATH = "storage.tmp"
 
@@ -45,7 +44,7 @@ class Server:
                         "OSerror: closing server")
                     return
                 except Exception as e:
-                    logger.error(action, logger.LogResult.fail, "err", e, "traceback", traceback.format_exc())
+                    logger.error(action, logger.LogResult.fail, "err", e)
                     raise e
 
                 logger.info(action, logger.LogResult.success)
@@ -98,7 +97,7 @@ class Server:
         except Exception as e:
             logger.error(
                 action, logger.LogResult.fail,
-                "err", e, "traceback", traceback.format_exc())
+                "err", e)
             return
 
         finally:
