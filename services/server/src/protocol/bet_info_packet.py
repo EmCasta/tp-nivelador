@@ -1,5 +1,5 @@
 from lottery.bet import Bet
-from protocol.packet import Packet, TYPE_BET, LENGTH_BYTES
+from protocol.packet import Packet, TYPE_BET, LENGTH_BYTES, ENDIANNESS, STR_ENCODING
 
 MIN_LEN_PACKET = 20
 HEADER_LEN = 1
@@ -10,6 +10,9 @@ BIRTHDATE_YEAR_DIGITS = 4
 BIRTHDATE_DAY_MONTH_DIGITS = 2
 
 class BetInfoPacket(Packet):
+    """
+    Paquete de tipo BET, con informacion de las apuestas
+    """
     def __init__(self, bets: list[Bet]):
         super().__init__()
         self.bets = bets
@@ -25,18 +28,18 @@ class BetInfoPacket(Packet):
             message.extend(self._serialize_bet(bet))
 
         length = len(message)
-        final_message = bytearray(length.to_bytes(2, "big", signed=False))
+        final_message = bytearray(length.to_bytes(LENGTH_BYTES, ENDIANNESS, signed=False))
         final_message.extend(message)
         return final_message
 
 
     def _serialize_bet(self, bet):
         message = bytearray()
-        message.extend(bet.document.to_bytes(4, "big", signed=False))
-        message.extend(bet.number.to_bytes(4, "big", signed=False))
-        message.extend(bet.birthdate.encode(encoding="utf-8", errors="replace"))
-        first_name_bytes = bet.first_name.encode(encoding="utf-8", errors="replace")
-        last_name_bytes = bet.last_name.encode(encoding="utf-8", errors="replace")
+        message.extend(bet.document.to_bytes(4, ENDIANNESS, signed=False))
+        message.extend(bet.number.to_bytes(4, ENDIANNESS, signed=False))
+        message.extend(bet.birthdate.encode(encoding=STR_ENCODING, errors="replace"))
+        first_name_bytes = bet.first_name.encode(encoding=STR_ENCODING, errors="replace")
+        last_name_bytes = bet.last_name.encode(encoding=STR_ENCODING, errors="replace")
         first_name_len = len(first_name_bytes)
         message.append(first_name_len)
         last_name_len = len(last_name_bytes)
@@ -65,19 +68,19 @@ def bet_from_bytes(bytes: bytearray, offset: int, agency_id: int) -> tuple[Bet, 
     bet_packet = bytes[offset:]
     if len(bet_packet) < MIN_LEN_PACKET:
         raise ValueError("Packet too short")
-    document = int.from_bytes(bet_packet[0:4], "big", signed=False)
-    number = int.from_bytes(bet_packet[4:8], "big", signed=False)
-    birthdate = bet_packet[8:18].decode(encoding="utf-8", errors="replace")
+    document = int.from_bytes(bet_packet[0:4], ENDIANNESS, signed=False)
+    number = int.from_bytes(bet_packet[4:8], ENDIANNESS, signed=False)
+    birthdate = bet_packet[8:18].decode(encoding=STR_ENCODING, errors="replace")
     if not validate_birthdate(birthdate):
         raise ValueError("Invalid Birthdate format")
-    first_name_len = int.from_bytes(bet_packet[18:19], "big", signed=False)
-    last_name_len = int.from_bytes(bet_packet[19:20], "big", signed=False)
+    first_name_len = int.from_bytes(bet_packet[18:19], ENDIANNESS, signed=False)
+    last_name_len = int.from_bytes(bet_packet[19:20], ENDIANNESS, signed=False)
     if len(bet_packet) < MIN_LEN_PACKET + first_name_len:
         raise ValueError("First Name too short")
-    first_name = bet_packet[MIN_LEN_PACKET:MIN_LEN_PACKET+first_name_len].decode(encoding="utf-8", errors="replace")
+    first_name = bet_packet[MIN_LEN_PACKET:MIN_LEN_PACKET+first_name_len].decode(encoding=STR_ENCODING, errors="replace")
     if len(bet_packet) < MIN_LEN_PACKET + first_name_len + last_name_len:
         raise ValueError("Last Name too short")
-    last_name = bet_packet[MIN_LEN_PACKET+first_name_len:MIN_LEN_PACKET+first_name_len+last_name_len].decode(encoding="utf-8", errors="replace")
+    last_name = bet_packet[MIN_LEN_PACKET+first_name_len:MIN_LEN_PACKET+first_name_len+last_name_len].decode(encoding=STR_ENCODING, errors="replace")
     bet = Bet(agency_id, first_name, last_name, document, birthdate, number)
     return bet, offset + MIN_LEN_PACKET + first_name_len + last_name_len
 

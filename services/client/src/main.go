@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -95,13 +96,15 @@ func run() int {
 	}
 
 	handleSigtermSignal(client)
-
-	if err := client.Run(); err != nil {
-		client.GracefulShutdown()
+	err = client.Run()
+	client.GracefulShutdown()
+	if err != nil && !errors.Is(err, net.ErrClosed) {
+		// me fijo que error no sea ErrClosed, ya que ese error sale cuando
+		// se cierra el socket propio, en ese caso no quiero terminar con
+		// un error
 		logger.Error("client-run", logger.Fail, "err", err)
 		return 1
 	}
-	client.GracefulShutdown()
 	logger.Info("client-run", logger.Success)
 	return 0
 }

@@ -1,8 +1,11 @@
-from protocol.packet import Packet, TYPE_ACK
+from protocol.packet import Packet, TYPE_ACK, ENDIANNESS, LENGTH_BYTES
 
 ACK_PACKET_LEN = 1
 
 class AckPacket(Packet):
+    """
+    Paquete de tipo ACK
+    """
     def __init__(self):
         super().__init__()
 
@@ -11,7 +14,7 @@ class AckPacket(Packet):
 
     def serialize(self):
         message = bytearray()
-        length = ACK_PACKET_LEN.to_bytes(2, "big", signed=False)
+        length = ACK_PACKET_LEN.to_bytes(LENGTH_BYTES, ENDIANNESS, signed=False)
         message.extend(length)
         message.extend(self.header())
         return message

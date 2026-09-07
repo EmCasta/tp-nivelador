@@ -6,7 +6,7 @@ import logger
 import safe_socket
 from protocol.hello_packet import hello_packet_from_bytes
 from protocol.bet_info_packet import bet_info_from_bytes, BetInfoPacket
-from protocol.packet import TYPE_BET, LENGTH_BYTES, get_last_packet_flag, set_last_packet_flag
+from protocol.packet import LENGTH_BYTES, get_last_packet_flag, set_last_packet_flag
 from protocol.ack_packet import AckPacket, TYPE_ACK
 from server.utils import read_packet
 from server.client_info import ClientInfo
@@ -15,21 +15,18 @@ import traceback
 
 STORAGE_PATH = "storage.tmp"
 
-# TODO: manejar errores
-# TODO: ver tema storage
-
 class Server:
     def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
         self.agency_quorum_min = agency_quorum_min
-        self.file_lock = threading.Lock()
-        self.quorum_barrier = threading.Barrier(agency_quorum_min)
+        self.file_lock = threading.Lock()   # lock para proteger archivo de storage
+        self.quorum_barrier = threading.Barrier(agency_quorum_min)  # barrera para coordinar sorteos de agencias segun AGENCY_QUORUM_MIN
         self.threads = []
         self.sockets = set()
-        self.sockets_lock = threading.Lock()
+        self.sockets_lock = threading.Lock()    # lock para proteger set de sockets
         self.is_running = True
-        signal.signal(signal.SIGTERM, self.shutdown_gracefully)
+        signal.signal(signal.SIGTERM, self.shutdown_gracefully) # manejar sigterm
 
     def run(self):
         action = "accept-connection"
@@ -48,15 +45,18 @@ class Server:
                         "OSerror: closing server")
                     return
                 except Exception as e:
-                    logger.error(action, logger.LogResult.fail)
+                    logger.error(action, logger.LogResult.fail, "err", e, "traceback", traceback.format_exc())
                     raise e
-                logger.info(action, logger.LogResult.success)
 
+                logger.info(action, logger.LogResult.success)
                 client_thread = threading.Thread(target=self._handle_client, args=(client_socket,))
                 client_thread.start()
                 self.threads.append(client_thread)
 
-    def shutdown_gracefully(self, signum, frame):
+    def shutdown_gracefully(self, signum=None, frame=None):
+        """
+        Graceful shutdown para el cliente, libera y cierra los recursos
+        """
         with self.sockets_lock:
             for sock in self.sockets:
                 sock.close()
@@ -70,48 +70,61 @@ class Server:
     def _handle_client(self, client_socket):
         action = "handle-client"
         try:
+            # guardar socket para poder cerrarlo despues
             self._store_socket(client_socket)
 
             logger.info(action, logger.LogResult.in_progress)
             lottery = Lottery(STORAGE_PATH)
 
+            # esperar por primer mensaje de tipo HELLO
             hello_packet = self._wait_for_hello(client_socket)
             client_info = ClientInfo(hello_packet.agency_id, hello_packet.batch_size)
             logger.info("hello-packet-received", logger.LogResult.in_progress, "agency-id", client_info.agency_id, "batch_size", client_info.batch_size)
 
+            # recibir info de apuestas de la agencia
             self._receive_bets(client_socket, lottery, client_info)
             logger.info("bets-received", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
 
+            # realizar el sorteo y enviar info de ganadores
             logger.info("sending-winners", logger.LogResult.in_progress, "agency-id", client_info.agency_id)
             self._send_winners(client_socket, lottery, client_info)
 
         except OSError:
-            # si ocurre esta excepcion, el server cerro el socket y hay que terminar
+            # si ocurre esta excepcion, el cliente cerro el socket y hay que terminar
             logger.info(
                 action, logger.LogResult.in_progress,
-                "OSerror: closing client")
+                "OSerror: closing server")
             return
         except Exception as e:
             logger.error(
                 action, logger.LogResult.fail,
                 "err", e, "traceback", traceback.format_exc())
-            raise e
+            return
 
         finally:
+            # cerrar conexion ante cualquier evento (error, shutdown)
             self._cleanup(client_socket)
 
     def _cleanup(self, client_socket):
+        """
+        Busca el socket en el set de sockets del servidor y lo cierra
+        """
         with self.sockets_lock:
             if client_socket in self.sockets:
                 self.sockets.remove(client_socket)
         client_socket.close()
 
     def _store_socket(self, client_socket):
+        """
+        Guarda el socket en el set de sockets del servidor
+        """
         with self.sockets_lock:
             self.sockets.add(client_socket)
         
-
     def _wait_for_hello(self, client_socket):
+        """
+        Espera por mensaje de tipo HELLO del cliente
+        """
         # esperar mensaje de hello
         packet = read_packet(client_socket)
         hello_packet = hello_packet_from_bytes(packet)
@@ -120,7 +133,26 @@ class Server:
         safe_socket.send_all(client_socket, ack)
         return hello_packet
 
+    def _send_ack(self, client_socket):
+        """
+        Envia un paquete de tipo ACK al cliente
+        """
+        ack = AckPacket().serialize()
+        safe_socket.send_all(client_socket, ack)
+
+    def _wait_for_ack(self, client_socket):
+        """
+        Espera por un paquete de tipo ACK en la conexion con el cliente.
+        Si el paquete es de otro tipo, lanza una excepcion
+        """
+        packet = read_packet(client_socket)
+        if packet[0] != TYPE_ACK:
+            raise ValueError("Invalid packet type: ACK expected")
+
     def _receive_bets(self, client_socket, lottery, client_info):
+        """
+        Recibe paquetes de tipo BET, con informacion de las apuestas del cliente
+        """
         keep_receiving = True
         while keep_receiving:
             # esperar packete con batch de bets
@@ -132,11 +164,12 @@ class Server:
             with self.file_lock:
                 lottery.store_bets(bet_info.bets)
             # todas las bets se procesaron correctamente: enviar ack
-            ack = AckPacket().serialize()
-            safe_socket.send_all(client_socket, ack)
+            self._send_ack(client_socket)
             
-
     def _send_winners(self, client_socket, lottery, client_info):
+        """
+        Realiza el sorteo y envia ganadores a las agencias involucradas
+        """
         try:
             self.quorum_barrier.wait()
         except threading.BrokenBarrierError:
@@ -149,11 +182,8 @@ class Server:
                     bets.append(bet)
         if len(bets) == 0:
             # no hay ganadores: mandar ack, esperar respuesta y terminar
-            ack = AckPacket().serialize()
-            safe_socket.send_all(client_socket, ack)
-            packet = read_packet(client_socket)
-            if packet[0] != TYPE_ACK:
-                raise ValueError("Invalid packet type: ACK expected")
+            self._send_ack(client_socket)
+            self._wait_for_ack(client_socket)
             return
         
         actual_offset = 0
@@ -164,6 +194,4 @@ class Server:
             if actual_offset >= len(bets):
                 set_last_packet_flag(packet, LENGTH_BYTES)
             safe_socket.send_all(client_socket, packet)
-            packet = read_packet(client_socket)
-            if packet[0] != TYPE_ACK:
-                raise ValueError("Invalid packet type: ACK expected")
+            self._wait_for_ack(client_socket)

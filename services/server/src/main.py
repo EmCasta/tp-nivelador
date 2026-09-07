@@ -17,6 +17,10 @@ def main():
     except Exception as e:
         logger.error("server-run", logger.LogResult.fail, "err", e)
         return 1
+    finally:    # ante error, liberar recursos
+        if s.is_running:
+        # si ya se habian liberado los recursos, no hacer nada
+            s.shutdown_gracefully()
     return 0
 
 
