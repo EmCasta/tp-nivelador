@@ -51,7 +51,7 @@ Para la implementación de un sistema cliente-servidor que emule la Lotería Nac
 
 - La información es enviada en *network byte order* (es decir, en big-endian).
 - Cada paquete del protocolo es enviado junto con su longitud total. Es decir, primero se envían 2 bytes con la longitud del paquete, y luego se envía el paquete a través de la red. Por lo tanto, para la lectura primero deben leerse dos bytes, y luego se utiliza la longitud recibida en esos dos bytes para leer el siguiente paquete. Esto permite aprovechar las funciones `recv_all` y `send_all` definidas anteriormente.
-- Los campos numéricos son *unsigned* para aumentar el rango posible de valores
+- Los campos numéricos son *unsigned* para aumentar el rango posible de valores.
 
 Este protocolo consta de los siguientes tipos de paquetes a ser interpretados por clientes/servidor:
 
@@ -125,3 +125,52 @@ Este protocolo consta de los siguientes tipos de paquetes a ser interpretados po
     ```
 
     Contiene el flag de último paquete, que al igual que en el caso del paquete `HELLO` es ignorado, y el tipo de paquete. En este caso, `TYPE_ACK` se define como `0x02`. Dado que se trata de un paquete cuya recepción tiene un significado, no contiene información salvo su tipo.
+
+#### Flujo de comunicación
+
+El protocolo define el siguiente flujo de comunicación:
+
+1. El cliente se conecta al servidor utilizando el protocolo TCP.
+2. Una vez establecida la conexión, cliente envía al servidor un mensaje de tipo `HELLO`, con la información necesaria para la sesión.
+3. El servidor, al recibir dicho paquete e interpretarlo correctamente, envía un mensaje de `ACK` al cliente, indicándole que puede comenzar a enviar los registros de apuestas.
+4. El cliente comienza a enviar paquetes de tipo `BET` con la información de las apuestas.
+5. Luego de la recepción de cada paquete de tipo `BET`, el servidor responde con un `ACK`.
+6. En el último paquete con registros de apuestas, el cliente setea el flag `is Last`. El servidor lo interpreta como un indicador de que ya tiene toda la información de apuestas de dicho cliente, y procede a realizar el sorteo.
+7. Una vez realizado el sorteo, el servidor envía al cliente paquetes de tipo `BET` con los registros de apuesta de los ganadores.
+8. El cliente responde con un `ACK` a cada paquete recibido.
+9. Una vez el servidor envió el último paquete de apuesta y recibió un `ACK`, termina la conexión.
+
+En el caso particular de que se haya realizado el sorteo y no haya habido ganadores de la agencia del cliente, el servidor en vez de enviar un paquete de tipo `BET`, envía un `ACK`. El cliente contesta con un `ACK` y termina la conexión.
+
+El flujo se ve como:
+```mermaid
+%%{init: { 'theme': 'dark' }}%%
+sequenceDiagram
+    Cliente->>+Servidor: HELLO
+    Servidor-->>-Cliente: ACK
+    Cliente->>+Servidor: BET 1
+    Servidor-->>-Cliente: ACK
+    note over Cliente,Servidor: Envío de BETs en batches...
+    Cliente->>+Servidor: BET N (isLast)
+    Servidor-->>-Cliente: ACK
+    Servidor->>Cliente: BET (isLast)
+    Cliente-->>Servidor: ACK
+```
+
+Cabe aclarar que, en caso de errores de parseo de paquetes o errores en la comunicación, por simplicidad en el protocolo simplemente se rompe la conexión. Además, no se implementaron mecanismos de retransmisiones o ventanas de paquetes, dado que TCP se encarga de esos aspectos internamente.
+
+### Parte 3: Repaso de Concurrencia
+#### Servidor multithreaded
+El servidor permite aceptar conexiones y procesar mensajes de forma concurrente. Para lograr esto, se optó por una solución *multithreaded*, en la cual se tiene un hilo principal que acepta conexiones, y un hilo por cada conexión con cada cliente. La implementación de esta solución implicó la utilización de mecanismos de sincronización y prevención de race conditions en diferentes secciones del código:
+
+- Se definió un lock (mutex) para proteger el acceso concurrente al archivo de *storage* del servidor, previniendo race conditions en las lecturas y escrituras al mismo.
+
+    Para este caso, se consideró también lockear el archivo de a partes, según un *offset* definido por la necesidad de cada hilo de leer o escribir, para una mejora de la performance. Pero como se pedía utilizar las funciones `load_bets` y `store_bets` para modificar dicho archivo, que no tenían en cuenta *offsets*, por simplicidad se optó por definir un lock global del archivo.
+
+- Para lograr que el servidor esperase la notificación de un número de agencias para realizar el sorteo, se utilizó una *barrera* como mecanismo de sincronización. Esta posee la ventaja de ser reutilizable, es decir, se reinicia automáticamente luego de ser utilizada (lo cual es una ventaja frente a una *Condvar*, en la que hay que restaurar su estado a mano una vez se llaga a la condición de quorum); y además permite que los sorteos se realicen con exactamente `AGENCY_QUORUM_MIN` agencias. Esto último implica que si `AGENCY_QUORUM_MIN=3` y hay 4 agencias listas para el sorteo, solamente tres de ellas serán sorteadas, y la cuarta deberá esperar en estado *blocked* hasta que lleguen otras tres. 
+
+- Se definió un `set` dentro del servidor para almacenamiento de los sockets de los clientes. Cada vez que llega una nueva conexión, el socket se guarda en el set, y cuando termina, se quita del set. Los accesos al mismo están protegidos por un lock de exclusión mutua. El uso de este set de sockets se detalla en la siguiente sección.
+
+>Nota: para implementar la concurrencia en el servidor, se utilizó la librería `threading`
+
+#### Graceful Shutdown
