@@ -174,3 +174,18 @@ El servidor permite aceptar conexiones y procesar mensajes de forma concurrente.
 >Nota: para implementar la concurrencia en el servidor, se utilizó la librería `threading`
 
 #### Graceful Shutdown
+Tanto para cliente como para servidor, se implementó un *graceful shutdown* mediante el manejo de la señal `SIGTERM`. Se optó por un enfoque de interrupción abrupta de la comunicación, para mayor velocidad en el cierre de recursos.
+
+En el caso del servidor, el *graceful shutdown* realiza las siguientes acciones:
+
+- Se cierran todos los sockets guardados en el set de sockets, incluyendo los sockets de las conexiones con los clientes y el socket de escucha del servidor. Esto interrumpe las comunicaciones activas, provocando que los hilos de conexión con los clientes terminen. Si uno de esos hilos no estaba en medio de envío o recepción de datos, simplemente terminará lo que está haciendo (por ejemplo, la serialización de un paquete), y al momento de intentar escribir o leer del socket, verá que está cerrado y terminará.
+- Se realiza un `abort` a la barrera del servidor, provocando que todos los hilos bloqueados en ella se desbloqueen.
+- Se realiza un `join` a todos los hilos de conexión, asegurándose de que todos los clientes terminaron.
+- Se elimina el archivo de *storage* del servidor, para limpiar el espacio ocupado por el mismo.
+- Se setea el flag de `is_running` del servidor a `False`, para evitar que siga intentando escuchar conexiones nuevas.
+
+El handler de la señal `SIGTERM` es configurado mediante `signal.signal`.
+
+En el caso del cliente, el *shutdown* es más sencillo dado que es un programa *single-threaded*. Simplemente se cierra la conexión con el servidor, lo cual implica que si estaba leyendo o escribiendo terminará con el error `net.ErrClosed`, ese error es interpretado y el cliente termina correctamente. Al igual que en el caso del servidor, si el cliente no estaba leyendo o escribiendo en el socket, simplemente terminará lo que está haciendo y al volver a intentar leer o escribir, fallará con `ErrClosed` y terminará.
+
+El handler de la señal `SIGTERM` es configurado mediante `signal.Notify`, y se lanza una *goroutine* que se encarga de escuchar por un channel hasta que llega la señal y lanzar el *handler*.
