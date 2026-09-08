@@ -189,3 +189,8 @@ El handler de la señal `SIGTERM` es configurado mediante `signal.signal`.
 En el caso del cliente, el *shutdown* es más sencillo dado que es un programa *single-threaded*. Simplemente se cierra la conexión con el servidor, lo cual implica que si estaba leyendo o escribiendo terminará con el error `net.ErrClosed`, ese error es interpretado y el cliente termina correctamente. Al igual que en el caso del servidor, si el cliente no estaba leyendo o escribiendo en el socket, simplemente terminará lo que está haciendo y al volver a intentar leer o escribir, fallará con `ErrClosed` y terminará.
 
 El handler de la señal `SIGTERM` es configurado mediante `signal.Notify`, y se lanza una *goroutine* que se encarga de escuchar por un channel hasta que llega la señal y lanzar el *handler*.
+
+## Pruebas de caja negra
+Una vez implementados los ejercicios pedidos, los tests de caja negra provistos por la cátedra pasan satisfactoriamente:
+
+![tests-pasando](/distri-tests-pasando.png)
