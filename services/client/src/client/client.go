@@ -228,6 +228,7 @@ func (client *Client) receiveWinners(outputFile *os.File) error {
 			if err := client.sendAck(); err != nil {
 				return err
 			}
+			return nil
 		default:
 			return errors.New("Unknown packet type")
 		}
