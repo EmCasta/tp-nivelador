@@ -58,7 +58,7 @@ func (client *Client) Run() error {
 	defer outputFile.Close()
 
 	// enviar mensaje de hello
-	if err := client.sendHello(); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err := client.sendHello(); err != nil {
 		errArgs := []any{"err", err}
 		logger.Error(action+":send-hello", logger.Fail, append(messageArgs, errArgs...))
 		return err
@@ -66,7 +66,7 @@ func (client *Client) Run() error {
 	logger.Info(action+":hello-sent", logger.InProgress, messageArgs...)
 
 	// enviar apuestas
-	if err = client.sendBets(inputFile); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err = client.sendBets(inputFile); err != nil {
 		errArgs := []any{"err", err}
 		logger.Error("send-bets", logger.Fail, append(messageArgs, errArgs...))
 		return err
@@ -74,7 +74,7 @@ func (client *Client) Run() error {
 	logger.Info(action+":sent-bets", logger.InProgress, messageArgs...)
 
 	// recibir ganadores
-	if err = client.receiveWinners(outputFile); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err = client.receiveWinners(outputFile); err != nil {
 		errArgs := []any{"err", err}
 		logger.Error("receive-winners", logger.Fail, append(messageArgs, errArgs...))
 		return err
